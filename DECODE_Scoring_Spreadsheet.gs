@@ -204,7 +204,8 @@ function buildAll() {
   if (!checkAuthorization()) return;
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  var temp = ss.insertSheet("_temp_build");
+  // Reuse leftover temp sheet from a previous failed build, or create new
+  var temp = ss.getSheetByName("_temp_build") || ss.insertSheet("_temp_build");
   var allSheets = ss.getSheets();
   for (var i = 0; i < allSheets.length; i++) {
     if (allSheets[i].getName() !== "_temp_build") {
