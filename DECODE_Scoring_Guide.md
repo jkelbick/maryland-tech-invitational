@@ -121,7 +121,7 @@ These highlights help you spot what needs attention. You can identify each state
 
 ### Using FinalScores
 
-The **FinalScores** sheet aggregates scores from all referee sheets. The top 3 rows (category headers, point values, column names) and the first 3 columns (Team #, Name, Video) stay visible as you scroll.
+The **FinalScores** sheet is the first tab in the spreadsheet. It aggregates scores from all referee sheets. The top 3 rows (category headers, point values, column names) and the first 3 columns (Team #, Name, Video) stay visible as you scroll.
 
 #### Key Columns
 

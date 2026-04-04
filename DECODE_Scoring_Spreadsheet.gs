@@ -220,6 +220,14 @@ function buildAll() {
   _buildFinalScoresSheet(ss);
 
   try { ss.deleteSheet(temp); } catch(e) {}
+
+  // Move FinalScores to first tab position
+  var finalSheet = ss.getSheetByName("FinalScores");
+  if (finalSheet) {
+    ss.setActiveSheet(finalSheet);
+    ss.moveActiveSheet(1);
+  }
+
   if (config) config.activate();
   SpreadsheetApp.flush();
 
@@ -232,7 +240,7 @@ function buildAll() {
       "2. Enter referee names in Config row 2 (columns D-I)\n" +
       "3. Enter referee emails in Config row 3 (for per-referee protection)\n" +
       "4. DECODE Scoring > Randomize Team Orders\n" +
-      "5. DECODE Scoring > Apply Sheet Protection\n" +
+      "5. DECODE Scoring > Apply Sheet Protection (this also hides Config)\n" +
       "6. Referees score on their individual sheets\n" +
       "7. Use FinalScores to compare scores and select an Official Referee per team",
       SpreadsheetApp.getUi().ButtonSet.OK
@@ -326,9 +334,11 @@ function _buildRefereeSheet(ss, config, refNum) {
 
   sheet.getRange("A1").setNote("ref_index:" + refNum);
 
-  // ---- ROW 1: Title ----
-  sheet.getRange("A1").setValue("DECODE 2025-2026 Match Review \u2014 " + sheetName);
-  sheet.getRange("A1:W1").merge().setFontSize(14).setFontWeight("bold")
+  // ---- ROW 1: Title (split merge at frozen column boundary) ----
+  sheet.getRange("A1:B1").merge().setFontSize(14).setFontWeight("bold")
+    .setBackground("#1F4E79").setFontColor("white");
+  sheet.getRange("C1").setValue("DECODE 2025-2026 Match Review \u2014 " + sheetName);
+  sheet.getRange("C1:W1").merge().setFontSize(14).setFontWeight("bold")
     .setBackground("#1F4E79").setFontColor("white").setHorizontalAlignment("center");
 
   // ---- ROW 2: Referee name + instructions + progress counter ----
@@ -616,8 +626,9 @@ function _buildFinalScoresSheet(ss) {
       .setBackground(groups[g].bg).setFontSize(11);
   }
 
-  // ---- ROW 2: Instructions (A-F) + Point values (L-X) ----
-  sheet.getRange("A2:F2").merge().setValue(
+  // ---- ROW 2: Instructions (split merge at frozen column boundary) + Point values (L-X) ----
+  sheet.getRange("A2:C2").merge().setBackground("#FFF5D6");
+  sheet.getRange("D2:F2").merge().setValue(
     "Select an Official Referee for each team. " +
     "\"Refs Agree?\" shows Yes when all referees match on every scoring element."
   ).setFontStyle("italic").setFontColor("#6B4400").setBackground("#FFF5D6")
@@ -811,13 +822,13 @@ function _buildFinalScoresSheet(ss) {
 
   var matchRange = [sheet.getRange("F" + FS_DATA_START + ":F" + FS_DATA_END)];
   rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo("Yes").setBackground("#C6EFCE").setFontColor("#006100").setFontWeight("bold")
+    .whenTextEqualTo("Yes").setBackground("#C6EFCE").setFontColor("#006100").setBold(true)
     .setRanges(matchRange).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo("No").setBackground("#FFC7CE").setFontColor("#9C0006").setFontWeight("bold")
+    .whenTextEqualTo("No").setBackground("#FFC7CE").setFontColor("#9C0006").setBold(true)
     .setRanges(matchRange).build());
   rules.push(SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo("N/A").setBackground("#F2F2F2").setFontColor("#5A5A5A").setFontWeight("bold")
+    .whenTextEqualTo("N/A").setBackground("#F2F2F2").setFontColor("#5A5A5A").setBold(true)
     .setRanges(matchRange).build());
 
   rules.push(SpreadsheetApp.newConditionalFormatRule()
@@ -983,7 +994,7 @@ function _doRenameRefSheets(ss, config) {
   for (var i = 0; i < renames.length; i++) {
     try {
       renames[i].sheet.setName(renames[i].desiredName);
-      renames[i].sheet.getRange("A1").setValue("DECODE 2025-2026 Match Review \u2014 " + renames[i].desiredName);
+      renames[i].sheet.getRange("C1").setValue("DECODE 2025-2026 Match Review \u2014 " + renames[i].desiredName);
       renamed++;
     } catch(e) {
       Logger.log("Failed to rename to " + renames[i].desiredName + ": " + e);
@@ -1100,13 +1111,20 @@ function applyProtection() {
     _restrictEditors(refInfoProt, [meEmail]);
   }
 
+  // Hide Config sheet — referees don't need it; admin can unhide via sheet tab right-click
+  if (config) {
+    try { config.hideSheet(); } catch(e) {
+      Logger.log("Could not hide Config sheet: " + e);
+    }
+  }
+
   var msg;
   if (hasEmails) {
     msg = "Protection applied with per-referee isolation!\n\n" +
       "- Each referee can ONLY edit their own sheet's scoring cells\n" +
       "- Formula cells, team info, and headers are locked\n" +
       "- FinalScores 'Official Referee' column is restricted to the owner\n" +
-      "- Config is restricted to the owner\n\n" +
+      "- Config sheet is now hidden (right-click any tab > Unhide to access it)\n\n" +
       "Make sure each referee has been shared on the spreadsheet.";
     if (failedEmails.length > 0) {
       msg += "\n\nWARNING: Could not grant access for:\n" + failedEmails.join("\n") +
@@ -1115,9 +1133,10 @@ function applyProtection() {
   } else {
     msg = "Protection applied (advisory mode).\n\n" +
       "- Formula cells are protected on all sheets\n" +
-      "- Scoring input cells show a warning but are NOT restricted per-referee\n\n" +
+      "- Scoring input cells show a warning but are NOT restricted per-referee\n" +
+      "- Config sheet is now hidden (right-click any tab > Unhide to access it)\n\n" +
       "To enable per-referee isolation:\n" +
-      "1. Enter referee emails in Config row 3\n" +
+      "1. Unhide Config, enter referee emails in row 3\n" +
       "2. Re-run DECODE Scoring > Apply Sheet Protection";
   }
 

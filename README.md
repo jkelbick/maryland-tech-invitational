@@ -15,7 +15,7 @@ A Google Apps Script that builds a complete match review scoring system in Googl
    - Enter referee names in Config row 2 (columns D-I)
    - Enter referee emails in Config row 3 (for per-referee protection)
    - Use **DECODE Scoring > Randomize Team Orders** menu (also renames sheets)
-   - Use **DECODE Scoring > Apply Sheet Protection** menu
+   - Use **DECODE Scoring > Apply Sheet Protection** menu (this also hides the Config sheet)
 
 ## Sheet Structure
 
@@ -30,7 +30,7 @@ A Google Apps Script that builds a complete match review scoring system in Googl
 ### Referee Sheets (named by referee)
 Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff"). Sheets are initially named "Referee 1" through "Referee 6" and renamed when Randomize or Rename is run.
 
-**Row 1**: Title bar (merged across all columns)
+**Row 1**: Title bar (split merge: A1:B1 in frozen zone, C1:W1 in scrollable zone)
 **Row 2**: Referee name (auto from Config), inline instructions, and progress counter ("Scored: X / Y")
 **Row 3**: Point values as a quick reference (×3, ×1, ×2 ea, 5/10, etc.)
 **Row 4**: Column headers (color-coded by section)
@@ -65,10 +65,10 @@ Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff").
 Frozen rows: 4 (title, instructions, points, headers). Frozen columns: 2 (Team #, Team Name).
 
 ### FinalScores Sheet
-Aggregation and score breakdown sheet for the head referee. Uses a 3-row header matching last year's layout.
+Aggregation and score breakdown sheet for the head referee. **First tab** in the spreadsheet. Uses a 3-row header matching last year's layout.
 
 **Row 1**: Merged category group headers (Teams | Referee | Total Scores | Fouls | Autonomous Period | TeleOp Period)
-**Row 2**: Instructions (cols A-F) + Point values per scoring element (cols L-X)
+**Row 2**: Instructions (cols D-F, split merge at frozen boundary) + Point values per scoring element (cols L-X)
 **Row 3**: Column names
 **Row 4+**: Data
 
@@ -150,10 +150,12 @@ Unauthorized users see an alert and the function exits immediately.
 - Each referee can ONLY edit columns D-O and W on their own sheet
 - FinalScores column E (Override Name selection) restricted to owner only
 - Config restricted to owner only (except team data and referee info)
+- Config sheet hidden after protection is applied (unhide via tab right-click > Unhide)
 
 ### Without Emails (Advisory Mode)
 - Formula cells protected with warnings
 - No per-referee enforcement (anyone can edit any input cell)
+- Config sheet hidden after protection is applied
 
 ## Named Referee Sheets
 
@@ -214,6 +216,12 @@ Fisher-Yates shuffle ensures each referee sees teams in a different random order
 ### Two-Phase Rename
 Referee sheet renaming uses a two-phase approach: first rename all sheets to temporary names (`_temp_rename_N`), then rename to final desired names. This prevents collisions when referee names are swapped (e.g., swapping "Alice" and "Bob").
 
+### Merge / Freeze Constraint
+Google Sheets does not allow frozen rows or columns to split a merged cell. All merges are split at frozen boundaries: referee sheet title uses A1:B1 (frozen) + C1:W1 (scrollable); FinalScores row 2 uses A2:C2 (frozen) + D2:F2 (scrollable). FinalScores row 1 groups naturally align with the 3-column freeze (A1:C1 = "Teams").
+
+### Sheet Tab Order
+`buildAll()` moves FinalScores to the first tab position after creating all sheets, so the head referee's view is front and center. Tab order: FinalScores, Config, Referee 1-6.
+
 ### Batch Operations
 All formula writes use batch `setFormulas()` and `setValues()` instead of individual cell writes for significantly better performance. Referee sheets write formulas for columns B, C, and P-V in three batch operations. FinalScores writes columns A-D, F, and G-X in three batch operations.
 
@@ -228,7 +236,7 @@ All formula writes use batch `setFormulas()` and `setValues()` instead of indivi
 |-----------|----------|-------------|
 | Randomize Team Orders | `randomizeTeamOrders()` | Shuffles teams for each referee, renames sheets |
 | Rename Referee Sheets from Config | `renameRefSheets()` | Renames sheet tabs to match Config names |
-| Apply Sheet Protection | `applyProtection()` | Sets up sheet/range protections |
+| Apply Sheet Protection | `applyProtection()` | Sets up sheet/range protections, hides Config |
 | Rebuild All Sheets (DESTRUCTIVE) | `confirmRebuild()` -> `buildAll()` | Deletes and recreates everything |
 
 ## File Inventory
@@ -236,4 +244,5 @@ All formula writes use batch `setFormulas()` and `setValues()` instead of indivi
 | File | Purpose |
 |------|---------|
 | `DECODE_Scoring_Spreadsheet.gs` | Main Google Apps Script (paste into Apps Script editor) |
-| `README.md` | This documentation |
+| `DECODE_Scoring_Guide.md` | User guide for referees and head referee |
+| `README.md` | This documentation (admin/developer reference) |
