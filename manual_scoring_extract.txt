@@ -1,0 +1,89 @@
+DECODE Competition Manual - Scoring Sections Extract (Version TU28, V8)
+Source: https://ftc-resources.firstinspires.org/ftc/game/manual
+Extracted: 2026-03-22
+
+=== SECTION 10.5 SCORING (Page 80) ===
+
+ALLIANCES are rewarded for accomplishing various actions throughout a MATCH, including LEAVING their
+LAUNCH LINE, scoring CLASSIFIED or OVERFLOW ARTIFACTS, scoring ARTIFACTS in the DEPOT, achieving a
+PATTERN of ARTIFACTS, returning to their BASE, and winning or tying MATCHES.
+
+All achievements are updated by FIELD STAFF throughout the MATCH. Scoring achievements are assessed as follows:
+A. Assessment of ARTIFACTS as either CLASSIFIED or OVERFLOW occurs throughout the MATCH and continues until all ARTIFACTS have come to rest following the conclusion of the MATCH. ARTIFACTS scored after the end of AUTO are assessed as part of TELEOP.
+B. Assessment of AUTO PATTERN scoring occurs at the end of AUTO.
+C. Assessment of TELEOP PATTERN scoring occurs when all ROBOTS and ARTIFACTS have come to rest following the conclusion of the MATCH.
+D. Assessment of DEPOT scoring occurs at the end of TELEOP when all ROBOTS and ARTIFACTS have come to rest following the conclusion of the MATCH.
+E. Assessment of LEAVE scoring occurs at the end of AUTO.
+F. Assessment of BASE scoring occurs at the end of the TELEOP.
+
+=== SECTION 10.5.1 ARTIFACT Scoring Criteria (Pages 80-81) ===
+
+To qualify for CLASSIFIED or OVERFLOW points, an ARTIFACT must enter the GOAL through the open top, exit under the archway, and pass through the diverting SQUARE. The determination of whether an ARTIFACT is CLASSIFIED or OVERFLOW is made as the ARTIFACT passes through the diverting SQUARE as follows:
+- An ARTIFACT that passes through the SQUARE and transitions directly to the RAMP is considered CLASSIFIED.
+- An ARTIFACT that passes through the SQUARE but does not meet CLASSIFIED criteria is considered OVERFLOW.
+
+ARTIFACTS that are CLASSIFIED move directly to the RAMP, meaning they:
+- do not roll over or otherwise bypass any ARTIFACTS on the RAMP.
+
+ARTIFACTS that are OVERFLOW:
+- pass through the SQUARE and may roll over one or more ARTIFACTS that are on the RAMP.
+
+To qualify for DEPOT points, ARTIFACTS must be over the DEPOT.
+- DEPOTS are ALLIANCE specific and are tied to the GOAL they are adjacent to.
+- DEPOT points are assessed after the MATCH without regard to which ALLIANCE placed the ARTIFACTS in the DEPOT.
+- DEPOTS are not protected zones, and either ALLIANCE can remove ARTIFACTS from either DEPOT during the MATCH.
+
+=== SECTION 10.5.2 PATTERN Scoring Criteria (Page 82) ===
+
+At the end of AUTO and TELEOP, ARTIFACTS that are directly on the RAMP score for PATTERN points if the
+color of the ARTIFACT in order matches the MOTIF color for that index, and the ARTIFACTS are retained by the GATE.
+
+The randomization of the OBELISK prior to the start of the MATCH selects the MOTIF which is repeated 3
+times to define the PATTERN colors for each of the 9 indices on the RAMP.
+
+MOTIF definitions (as defined by OBELISK):
+- GPP (ID 21): GATE G P P G P P G P P SQUARE
+- PGP (ID 22): GATE P G P P G P P G P SQUARE
+- PPG (ID 23): GATE P P G P P G P P G SQUARE
+
+PATTERN points are scored based on the color of the ARTIFACT on the RAMP matching the individual index color defined by the MOTIF.
+
+=== SECTION 10.5.3 ROBOT Scoring Criteria (Page 83) ===
+
+LEAVE: To qualify for LEAVE points, a ROBOT must move such that it is no longer over any LAUNCH LINE at the end of AUTO.
+
+BASE: To qualify for BASE points, a ROBOT must be either fully returned or partially returned:
+- A ROBOT fully returned to BASE must only be supported, either directly or transitively, by the TILE in the BASE ZONE.
+- A ROBOT partially returned to BASE must be partially supported, either directly or transitively, by the TILE in the BASE ZONE.
+
+=== SECTION 10.5.4 Point Values (Page 84) ===
+
+Table 10-2: DECODE point values
+
+                                    AUTO    TELEOP
+LEAVE                               3
+ARTIFACT  CLASSIFIED                3       3
+          OVERFLOW                  1       1
+          DEPOT                             1
+PATTERN   ARTIFACT matches MOTIF    2       2
+BASE      Partially returned                5
+          Fully returned                    10
+          Additional Bonus: 2 ROBOTS        10
+            fully returned to BASE
+
+RANKING POINTS:
+- MOVEMENT RP: Combined LEAVE + BASE points earned at or above threshold
+- GOAL RP: The number of ARTIFACTS scored through the SQUARE at or above threshold
+- PATTERN RP: PATTERN points earned at or above threshold
+- WIN: 3 RP
+- TIE: 1 RP
+
+=== SECTION 10.6 Violations (Page 85) ===
+
+Penalty definitions:
+- MINOR FOUL: a credit of 5 points towards the opponent's MATCH point total
+- MAJOR FOUL: a credit of 15 points towards the opponent's MATCH point total
+- YELLOW CARD: warning for egregious behavior
+- RED CARD: DISQUALIFICATION for the MATCH
+- DISABLED: ROBOT deactivated for remainder of MATCH
+- DISQUALIFIED: 0 MATCH points and 0 RANKING POINTS
