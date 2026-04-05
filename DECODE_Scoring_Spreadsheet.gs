@@ -1,5 +1,5 @@
 /**
- * FTC DECODE 2025-2026 - Match Review Scoring Spreadsheet
+ * FTC Match Review Scoring Spreadsheet
  * Google Apps Script to build all sheets, formulas, validation, formatting, and protection.
  *
  * USAGE:
@@ -22,23 +22,52 @@
  *   can still VIEW all sheets including other referees' scores. If scoring independence is
  *   critical, use separate spreadsheets per referee.
  *
- * SCORING MODEL (per DECODE Game Manual Section 10.5):
+ * SCORING MODEL:
  *   - CLASSIFIED/OVERFLOW: Counted throughout the match as artifacts pass through the SQUARE. No cap.
  *   - PATTERN: Assessed at end of AUTO and end of TELEOP based on RAMP snapshot. Referee enters
  *     artifact colors on the RAMP in order (G/P), and the spreadsheet auto-calculates matches
  *     against the MOTIF. Max 9 characters (RAMP capacity).
  *   - Fouls: Subtracted from team score (deviation from official rules for solo match context).
  *   - 2-robot BASE bonus (10 pts) and Ranking Points: Excluded (solo match, single robot).
+ *
+ * HOW TO UPDATE FOR A NEW SEASON:
+ * ─────────────────────────────────────────────────────────
+ *  1. GAME_NAME / SEASON — Update the game name and year.
+ *  2. Point values (PTS_*) — See the competition manual scoring table.
+ *  3. MOTIFS — The allowed gate-field values (e.g., obelisk patterns).
+ *  4. LEAVE_OPTIONS / BASE_OPTIONS — Dropdown choices for Yes/No and base status.
+ *  5. RAMP_REGEX / RAMP_MAX_CHARS — Update if the text-entry format changes.
+ *     Remove RAMP logic entirely if the new game has no equivalent.
+ *  6. Column headers — In _buildRefereeSheet(), update the 'headers' array.
+ *  7. Scoring formulas — In _buildRefereeSheet(), update the formulas in the
+ *     DATA ROWS section for Auto Score, TeleOp Score, etc.
+ *  8. RC column indices — If columns are added/removed/reordered, update the
+ *     RC object and layout constants as needed.
+ *  9. FinalScores mapping — In _buildFinalScoresSheet(), update vlookupMap,
+ *     elemCols, headers, and category groups.
+ * 10. Help text — In the DATA VALIDATION section of _buildRefereeSheet(),
+ *     update the text shown to referees on invalid input.
+ * 11. Documentation — Update README.md and the Scoring Guide.
+ * 12. Run buildAll() to generate all sheets from scratch.
+ *
+ * After updating an already-in-use spreadsheet, run "Update Sheets" from the
+ * menu instead of buildAll — this preserves existing referee scoring data.
+ * ─────────────────────────────────────────────────────────
  */
 
 // ============================================================
-// CONFIGURATION
+// GAME CONFIGURATION — Update these values each season
 // ============================================================
+
+// --- Season identity ---
+const GAME_NAME = "DECODE";
+const SEASON = "2025-2026";
+
+// --- General ---
 const NUM_REFEREES = 6;
 const MAX_TEAMS = 50;
-const MOTIFS = ["GPP", "PGP", "PPG"];
 
-// Scoring point values (per DECODE Game Manual Section 10.5, Table 10-2)
+// --- Scoring point values (see competition manual scoring table) ---
 const PTS_LEAVE = 3;
 const PTS_CLASSIFIED = 3;
 const PTS_OVERFLOW = 1;
@@ -49,13 +78,30 @@ const PTS_BASE_FULL = 10;
 const PTS_MINOR_FOUL = 5;
 const PTS_MAJOR_FOUL = 15;
 
-// Layout constants
-const REF_DATA_START = 5;
-const REF_DATA_END = MAX_TEAMS + 4;
+// --- Dropdown option values ---
+const MOTIFS = ["GPP", "PGP", "PPG"];
+const LEAVE_OPTIONS = ["Yes", "No"];
+const BASE_OPTIONS = ["None", "Partial", "Full"];
+
+// --- Text-entry validation (RAMP color entry) ---
+const RAMP_REGEX = "^[GP]{1,9}$";
+const RAMP_MAX_CHARS = 9;
+
+// --- Layout constants ---
+// Referee sheets: Row 1=Title, Row 2=Point values, Row 3=Headers, Row 4+=Data
+const REF_DATA_START = 4;
+const REF_DATA_END = MAX_TEAMS + 3;
+// FinalScores: Row 1=Category headers, Row 2=Point values, Row 3=Headers, Row 4+=Data
 const FS_DATA_START = 4;
 const FS_DATA_END = MAX_TEAMS + 3;
 
-// Referee sheet column indices (A=1 through W=23)
+// Referee sheet column layout (update if columns change):
+//   A=Team#(auto)  B=Name(auto)  C=Video(auto)
+//   D=MOTIF(gate)  E=LEAVE  F=Auto CLS  G=Auto OVF  H=Auto RAMP Colors
+//   I=Tel CLS  J=Tel OVF  K=Tel DEPOT  L=Tel RAMP Colors  M=BASE
+//   N=Minor Fouls  O=Major Fouls
+//   P=Auto PAT(calc)  Q=Auto Score(calc)  R=Tel PAT(calc)  S=Tel Score(calc)
+//   T=Foul Deduction(calc)  U=Score w/o Fouls(calc)  V=TOTAL(calc)  W=Notes
 const RC = {
   TEAM: 1, NAME: 2, VIDEO: 3, MOTIF: 4, LEAVE: 5,
   AUTO_CLS: 6, AUTO_OVF: 7, AUTO_RAMP: 8,
@@ -163,17 +209,46 @@ function _restrictEditors(protection, allowedEmails) {
   });
 }
 
+/** Hide referee sheets that still have default "Referee N" names (unused slots). */
+function _hideUnnamedRefSheets(ss, config) {
+  if (!config) return;
+  for (var r = 1; r <= NUM_REFEREES; r++) {
+    var configName = config.getRange(_refConfigCol(r) + "2").getValue();
+    var isDefault = !configName || configName.toString().trim() === "" ||
+      configName.toString().trim() === "Referee " + r;
+    if (isDefault) {
+      var sheet = findRefSheet(ss, config, r);
+      if (sheet) {
+        try { sheet.hideSheet(); } catch(e) {
+          Logger.log("Could not hide sheet for Referee " + r + ": " + e);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Detect whether a referee sheet uses the old layout (data at row 5) or new (data at row 4).
+ * Old layout had 4 frozen rows (title, instructions, points, headers).
+ * New layout has 3 frozen rows (title, points, headers).
+ */
+function _detectRefDataStart(sheet) {
+  var frozen = sheet.getFrozenRows();
+  return frozen >= 4 ? 5 : 4;
+}
+
 // ============================================================
 // CUSTOM MENU
 // ============================================================
 function onOpen() {
   try {
-    SpreadsheetApp.getUi().createMenu("DECODE Scoring")
+    SpreadsheetApp.getUi().createMenu(GAME_NAME + " Scoring")
       .addItem("Randomize Team Orders", "randomizeTeamOrders")
       .addItem("Rename Referee Sheets from Config", "renameRefSheets")
       .addSeparator()
       .addItem("Apply Sheet Protection", "applyProtection")
       .addSeparator()
+      .addItem("Update Sheets (Non-Destructive)", "updateSheets")
       .addItem("Rebuild All Sheets (DESTRUCTIVE)", "confirmRebuild")
       .addToUi();
   } catch(e) {
@@ -235,20 +310,151 @@ function buildAll() {
   try {
     SpreadsheetApp.getUi().alert(
       "Setup Complete",
-      "DECODE Scoring Spreadsheet built successfully!\n\n" +
+      GAME_NAME + " Scoring Spreadsheet built successfully!\n\n" +
       "Next steps:\n" +
       "1. Enter team data in Config columns A-C (row 4+): number, name, video link\n" +
       "2. Enter referee names in Config row 2 (columns D-I)\n" +
       "3. Enter referee emails in Config row 3 (for per-referee protection)\n" +
-      "4. DECODE Scoring > Randomize Team Orders\n" +
-      "5. DECODE Scoring > Apply Sheet Protection (this also hides Config)\n" +
+      "4. " + GAME_NAME + " Scoring > Randomize Team Orders\n" +
+      "5. " + GAME_NAME + " Scoring > Apply Sheet Protection (this also hides Config)\n" +
       "6. Referees score on their individual sheets\n" +
       "7. Use FinalScores to compare scores and select an Official Referee per team",
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   } catch(e) {
-    Logger.log("DECODE Scoring Spreadsheet built successfully.");
+    Logger.log(GAME_NAME + " Scoring Spreadsheet built successfully.");
   }
+}
+
+// ============================================================
+// UPDATE SHEETS (non-destructive — preserves scoring data)
+// ============================================================
+/**
+ * Rebuilds all referee sheets and FinalScores with the current template
+ * (formulas, formatting, validation, headers) while preserving:
+ *   - Team orders (column A on referee sheets)
+ *   - Referee scoring inputs (columns D-O, W on referee sheets)
+ *   - Official Referee selections (column E on FinalScores)
+ *
+ * Use this after modifying the template code to apply changes to an
+ * existing spreadsheet without losing referee work. Sheet protection
+ * is NOT reapplied — run "Apply Sheet Protection" afterward if needed.
+ */
+function updateSheets() {
+  if (!checkAuthorization()) return;
+  var ui;
+  try { ui = SpreadsheetApp.getUi(); } catch(e) {
+    Logger.log("updateSheets must be run from the " + GAME_NAME + " Scoring menu.");
+    return;
+  }
+
+  var response = ui.alert(
+    "Update All Sheets",
+    "This updates all sheet layouts, formulas, formatting, and validation " +
+    "to the current template without erasing scoring data.\n\n" +
+    "Preserved: team orders, referee scoring inputs, Official Referee selections.\n" +
+    "Updated: formulas, formatting, validation, headers, conditional formatting.\n\n" +
+    "Continue?",
+    ui.ButtonSet.YES_NO
+  );
+  if (response !== ui.Button.YES) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var config = ss.getSheetByName("Config");
+  if (!config) {
+    ui.alert("Error", "Config sheet not found. Run buildAll() first.", ui.ButtonSet.OK);
+    return;
+  }
+
+  // --- Save referee scoring data ---
+  var savedRefData = {};
+  for (var r = 1; r <= NUM_REFEREES; r++) {
+    var sheet = findRefSheet(ss, config, r);
+    if (!sheet) continue;
+
+    var dataStart = _detectRefDataStart(sheet);
+    var dataEnd = dataStart + MAX_TEAMS - 1;
+
+    savedRefData[r] = {
+      teams: sheet.getRange("A" + dataStart + ":A" + dataEnd).getValues(),
+      scoring: sheet.getRange("D" + dataStart + ":O" + dataEnd).getValues(),
+      notes: sheet.getRange("W" + dataStart + ":W" + dataEnd).getValues()
+    };
+  }
+
+  // --- Save FinalScores Official Referee selections ---
+  var fsSheet = ss.getSheetByName("FinalScores");
+  var savedOfficialRefs = null;
+  if (fsSheet) {
+    savedOfficialRefs = fsSheet.getRange("E" + FS_DATA_START + ":E" + FS_DATA_END).getValues();
+  }
+
+  // --- Create temp sheet to avoid last-sheet deletion errors ---
+  var temp = ss.getSheetByName("_temp_update") || ss.insertSheet("_temp_update");
+
+  // --- Delete old referee sheets ---
+  for (var r = 1; r <= NUM_REFEREES; r++) {
+    var sheet = findRefSheet(ss, config, r);
+    if (sheet) {
+      try { ss.deleteSheet(sheet); } catch(e) {
+        Logger.log("Could not delete sheet for referee " + r + ": " + e);
+      }
+    }
+  }
+
+  // --- Delete old FinalScores ---
+  fsSheet = ss.getSheetByName("FinalScores");
+  if (fsSheet) {
+    try { ss.deleteSheet(fsSheet); } catch(e) {}
+  }
+
+  // --- Rebuild all referee sheets and restore data ---
+  for (var r = 1; r <= NUM_REFEREES; r++) {
+    _buildRefereeSheet(ss, config, r);
+
+    if (savedRefData[r]) {
+      var sheet = findRefSheet(ss, config, r);
+      if (sheet) {
+        sheet.getRange(REF_DATA_START, 1, MAX_TEAMS, 1).setValues(savedRefData[r].teams);
+        sheet.getRange("D" + REF_DATA_START + ":O" + REF_DATA_END).setValues(savedRefData[r].scoring);
+        sheet.getRange("W" + REF_DATA_START + ":W" + REF_DATA_END).setValues(savedRefData[r].notes);
+      }
+    }
+  }
+
+  // --- Rebuild FinalScores and restore selections ---
+  _buildFinalScoresSheet(ss);
+  if (savedOfficialRefs) {
+    fsSheet = ss.getSheetByName("FinalScores");
+    if (fsSheet) {
+      fsSheet.getRange("E" + FS_DATA_START + ":E" + FS_DATA_END).setValues(savedOfficialRefs);
+    }
+  }
+
+  // Move FinalScores to first tab
+  fsSheet = ss.getSheetByName("FinalScores");
+  if (fsSheet) {
+    ss.setActiveSheet(fsSheet);
+    ss.moveActiveSheet(1);
+  }
+
+  // Hide unnamed referee sheets
+  _hideUnnamedRefSheets(ss, config);
+
+  // Clean up temp sheet
+  try { ss.deleteSheet(temp); } catch(e) {}
+
+  if (config) config.activate();
+  SpreadsheetApp.flush();
+
+  ui.alert(
+    "Update Complete",
+    "All sheets updated to the latest template.\n" +
+    "Referee scoring data and Official Referee selections have been preserved.\n\n" +
+    "Note: Sheet protection has NOT been reapplied.\n" +
+    "Run '" + GAME_NAME + " Scoring > Apply Sheet Protection' if needed.",
+    ui.ButtonSet.OK
+  );
 }
 
 // ============================================================
@@ -335,35 +541,21 @@ function _buildRefereeSheet(ss, config, refNum) {
 
   sheet.getRange("A1").setNote("ref_index:" + refNum);
 
-  // ---- ROW 1: Title (split merge at frozen column boundary) ----
-  sheet.getRange("A1:B1").merge().setFontSize(14).setFontWeight("bold")
-    .setBackground("#1F4E79").setFontColor("white");
-  sheet.getRange("C1").setValue("DECODE 2025-2026 Match Review \u2014 " + sheetName);
+  // ---- ROW 1: Title + progress counter (split merge at frozen column boundary) ----
+  // A1:B1 (frozen) = progress counter; C1:W1 (scrollable) = title
+  sheet.getRange("A1:B1").merge();
+  sheet.getRange("A1").setFormula(
+    '=IF(COUNTA(A' + REF_DATA_START + ':A' + REF_DATA_END + ')=0,"No teams",' +
+    '"Scored: "&COUNTA(D' + REF_DATA_START + ':D' + REF_DATA_END + ')&" / "&COUNTA(A' + REF_DATA_START + ':A' + REF_DATA_END + '))'
+  );
+  sheet.getRange("A1:B1").setFontSize(11).setFontWeight("bold")
+    .setBackground("#1F4E79").setFontColor("white")
+    .setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sheet.getRange("C1").setValue(GAME_NAME + " " + SEASON + " Match Review \u2014 " + sheetName);
   sheet.getRange("C1:W1").merge().setFontSize(14).setFontWeight("bold")
     .setBackground("#1F4E79").setFontColor("white").setHorizontalAlignment("center");
 
-  // ---- ROW 2: Referee name + instructions + progress counter ----
-  var configCol = _refConfigCol(refNum);
-  sheet.getRange("A2").setValue("Referee:");
-  sheet.getRange("B2").setFormula("=Config!" + configCol + "2");
-  sheet.getRange("C2").setValue(
-    "1) Select MOTIF first (marks the row as scored). " +
-    "2) Fill ALL columns \u2014 enter 0 for zero counts, 'No' for LEAVE, 'None' for BASE. Pink = missing. Notes are optional. " +
-    "3) RAMP Colors: type G/P in order GATE\u2192SQUARE; leave blank if no artifacts on RAMP."
-  );
-  // Progress counter — shows "No teams loaded" when denominator is 0
-  sheet.getRange("V2").setFormula(
-    '=IF(COUNTA(A' + REF_DATA_START + ':A' + REF_DATA_END + ')=0,"No teams loaded",' +
-    '"Scored: "&COUNTA(D' + REF_DATA_START + ':D' + REF_DATA_END + ')&" / "&COUNTA(A' + REF_DATA_START + ':A' + REF_DATA_END + '))'
-  );
-  sheet.getRange("V2:W2").merge().setFontWeight("bold").setFontSize(11)
-    .setHorizontalAlignment("center").setBackground("#C6EFCE").setFontColor("#006100");
-  sheet.getRange("A2:B2").setFontWeight("bold").setFontSize(11);
-  // Improved contrast: darker text on lighter background
-  sheet.getRange("C2:U2").merge().setFontStyle("italic").setFontColor("#6B4400").setBackground("#FFF5D6");
-  sheet.setRowHeight(2, 38);
-
-  // ---- ROW 3: Point values (improved contrast: darker text, 10pt) ----
+  // ---- ROW 2: Point values (quick reference for referees) ----
   var pointLabels = [
     [RC.LEAVE, String(PTS_LEAVE)],
     [RC.AUTO_CLS, "\u00d7" + PTS_CLASSIFIED],
@@ -378,12 +570,12 @@ function _buildRefereeSheet(ss, config, refNum) {
     [RC.MAJOR, "\u00d7(\u2212" + PTS_MAJOR_FOUL + ")"]
   ];
   for (var i = 0; i < pointLabels.length; i++) {
-    sheet.getRange(3, pointLabels[i][0]).setValue(pointLabels[i][1]);
+    sheet.getRange(2, pointLabels[i][0]).setValue(pointLabels[i][1]);
   }
-  sheet.getRange("A3:W3").setFontStyle("italic").setFontSize(10)
+  sheet.getRange("A2:W2").setFontStyle("italic").setFontSize(10)
     .setHorizontalAlignment("center").setBackground("#E8E8E8").setFontColor("#505050");
 
-  // ---- ROW 4: Column Headers ----
+  // ---- ROW 3: Column Headers ----
   var headers = [
     "Team #",                     // A
     "Team Name",                  // B
@@ -410,20 +602,20 @@ function _buildRefereeSheet(ss, config, refNum) {
     "Notes"                       // W
   ];
   for (var c = 0; c < headers.length; c++) {
-    sheet.getRange(4, c + 1).setValue(headers[c]);
+    sheet.getRange(3, c + 1).setValue(headers[c]);
   }
-  sheet.getRange("A4:W4").setFontWeight("bold").setWrap(true).setVerticalAlignment("middle")
+  sheet.getRange("A3:W3").setFontWeight("bold").setWrap(true).setVerticalAlignment("middle")
     .setHorizontalAlignment("center").setFontColor("white");
-  sheet.setRowHeight(4, 60);
+  sheet.setRowHeight(3, 60);
 
   // Color-code header groups (TeleOp uses darker gold for better contrast with white text)
-  sheet.getRange("A4:C4").setBackground("#2F5496");
-  sheet.getRange("D4").setBackground("#7030A0");
-  sheet.getRange("E4:H4").setBackground("#548235");
-  sheet.getRange("I4:M4").setBackground("#8B6914");
-  sheet.getRange("N4:O4").setBackground("#C00000");
-  sheet.getRange("P4:V4").setBackground("#2F5496");
-  sheet.getRange("W4").setBackground("#696969");
+  sheet.getRange("A3:C3").setBackground("#2F5496");
+  sheet.getRange("D3").setBackground("#7030A0");
+  sheet.getRange("E3:H3").setBackground("#548235");
+  sheet.getRange("I3:M3").setBackground("#8B6914");
+  sheet.getRange("N3:O3").setBackground("#C00000");
+  sheet.getRange("P3:V3").setBackground("#2F5496");
+  sheet.getRange("W3").setBackground("#696969");
 
   // ---- DATA ROWS (batch formula writes) ----
   var formulasB = [], formulasC = [], formulasPV = [];
@@ -434,23 +626,23 @@ function _buildRefereeSheet(ss, config, refNum) {
     formulasC.push(['=IF(A' + row + '="","",IFERROR(VLOOKUP(A' + row + ',Config!$A:$C,3,FALSE),""))']);
 
     formulasPV.push([
-      // P: Auto PATTERN Count
+      // P: Auto PATTERN Count — character-by-character match of RAMP colors vs MOTIF repeated 3x
       '=IF(' + gate + ',"",IF(LEN(H' + row + ')=0,0,' +
         'SUMPRODUCT((MID(UPPER(H' + row + '),SEQUENCE(LEN(H' + row + ')),1)=' +
         'MID(REPT(D' + row + ',3),SEQUENCE(LEN(H' + row + ')),1))*1)))',
-      // Q: Auto Score
+      // Q: Auto Score = LEAVE + CLASSIFIED×pts + OVERFLOW×pts + PATTERN×pts
       '=IF(' + gate + ',"",IF(E' + row + '="Yes",' + PTS_LEAVE + ',0)+F' + row + '*' + PTS_CLASSIFIED + '+G' + row + '*' + PTS_OVERFLOW + '+P' + row + '*' + PTS_PATTERN + ')',
-      // R: TeleOp PATTERN Count
+      // R: TeleOp PATTERN Count — same logic as Auto but with TeleOp RAMP colors
       '=IF(' + gate + ',"",IF(LEN(L' + row + ')=0,0,' +
         'SUMPRODUCT((MID(UPPER(L' + row + '),SEQUENCE(LEN(L' + row + ')),1)=' +
         'MID(REPT(D' + row + ',3),SEQUENCE(LEN(L' + row + ')),1))*1)))',
-      // S: TeleOp Score
+      // S: TeleOp Score = CLASSIFIED×pts + OVERFLOW×pts + DEPOT×pts + PATTERN×pts + BASE
       '=IF(' + gate + ',"",I' + row + '*' + PTS_CLASSIFIED + '+J' + row + '*' + PTS_OVERFLOW + '+K' + row + '*' + PTS_DEPOT + '+R' + row + '*' + PTS_PATTERN + '+IF(M' + row + '="Full",' + PTS_BASE_FULL + ',IF(M' + row + '="Partial",' + PTS_BASE_PARTIAL + ',0)))',
-      // T: Foul Deduction
+      // T: Foul Deduction = Minor×pts + Major×pts
       '=IF(' + gate + ',"",N' + row + '*' + PTS_MINOR_FOUL + '+O' + row + '*' + PTS_MAJOR_FOUL + ')',
-      // U: Score without Fouls
+      // U: Score without Fouls = Auto + TeleOp
       '=IF(' + gate + ',"",Q' + row + '+S' + row + ')',
-      // V: TOTAL SCORE
+      // V: TOTAL SCORE = max(0, score - fouls)
       '=IF(' + gate + ',"",MAX(0,U' + row + '-T' + row + '))'
     ]);
   }
@@ -463,13 +655,13 @@ function _buildRefereeSheet(ss, config, refNum) {
     SpreadsheetApp.newDataValidation()
       .requireValueInList(MOTIFS, true)
       .setAllowInvalid(false)
-      .setHelpText("REQUIRED: Select the MOTIF shown on the OBELISK (GPP, PGP, or PPG). Selecting a value marks this row as scored.")
+      .setHelpText("REQUIRED: Select the MOTIF shown on the OBELISK (" + MOTIFS.join(", ") + "). Selecting a value marks this row as scored.")
       .build()
   );
 
   sheet.getRange("E" + REF_DATA_START + ":E" + REF_DATA_END).setDataValidation(
     SpreadsheetApp.newDataValidation()
-      .requireValueInList(["Yes", "No"], true)
+      .requireValueInList(LEAVE_OPTIONS, true)
       .setAllowInvalid(false)
       .setHelpText("Did the robot LEAVE? Robot must no longer be over any LAUNCH LINE at the end of AUTO.")
       .build()
@@ -477,9 +669,9 @@ function _buildRefereeSheet(ss, config, refNum) {
 
   sheet.getRange("M" + REF_DATA_START + ":M" + REF_DATA_END).setDataValidation(
     SpreadsheetApp.newDataValidation()
-      .requireValueInList(["None", "Partial", "Full"], true)
+      .requireValueInList(BASE_OPTIONS, true)
       .setAllowInvalid(false)
-      .setHelpText("Robot position on BASE TILE at end of TELEOP: None, Partial (robot partly on the tile), Full (robot only on the tile).")
+      .setHelpText("Robot position on BASE TILE at end of TELEOP: " + BASE_OPTIONS.join(", ") + ".")
       .build()
   );
 
@@ -507,14 +699,14 @@ function _buildRefereeSheet(ss, config, refNum) {
 
   // RAMP Colors (G/P characters, max 9)
   var rampCols = [
-    ["H", "Enter artifact colors on the RAMP at end of AUTO, in order from GATE to SQUARE. Use G (green) or P (purple). Max 9 characters. Case-insensitive."],
-    ["L", "Enter artifact colors on the RAMP at end of TELEOP, in order from GATE to SQUARE. Use G (green) or P (purple). Max 9 characters. Case-insensitive."]
+    ["H", "Enter artifact colors on the RAMP at end of AUTO, in order from GATE to SQUARE. Use G (green) or P (purple). Max " + RAMP_MAX_CHARS + " characters. Case-insensitive."],
+    ["L", "Enter artifact colors on the RAMP at end of TELEOP, in order from GATE to SQUARE. Use G (green) or P (purple). Max " + RAMP_MAX_CHARS + " characters. Case-insensitive."]
   ];
   for (var rc = 0; rc < rampCols.length; rc++) {
     var col = rampCols[rc][0];
     sheet.getRange(col + REF_DATA_START + ":" + col + REF_DATA_END).setDataValidation(
       SpreadsheetApp.newDataValidation()
-        .requireFormulaSatisfied('=OR(' + col + REF_DATA_START + '="",REGEXMATCH(UPPER(' + col + REF_DATA_START + '),"^[GP]{1,9}$"))')
+        .requireFormulaSatisfied('=OR(' + col + REF_DATA_START + '="",REGEXMATCH(UPPER(' + col + REF_DATA_START + '),"' + RAMP_REGEX + '"))')
         .setAllowInvalid(false)
         .setHelpText(rampCols[rc][1])
         .build()
@@ -543,7 +735,7 @@ function _buildRefereeSheet(ss, config, refNum) {
   sheet.getRange("C" + REF_DATA_START + ":C" + REF_DATA_END).setHorizontalAlignment("left");
   sheet.getRange("W" + REF_DATA_START + ":W" + REF_DATA_END).setHorizontalAlignment("left");
 
-  sheet.getRange("A4:W" + REF_DATA_END).setBorder(true, true, true, true, true, true,
+  sheet.getRange("A3:W" + REF_DATA_END).setBorder(true, true, true, true, true, true,
     "#B4B4B4", SpreadsheetApp.BorderStyle.SOLID);
 
   var colWidths = [
@@ -553,7 +745,7 @@ function _buildRefereeSheet(ss, config, refNum) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
   }
 
-  sheet.setFrozenRows(4);
+  sheet.setFrozenRows(3);
   sheet.setFrozenColumns(2);
 
   // ---- CONDITIONAL FORMATTING ----
@@ -719,7 +911,7 @@ function _buildFinalScoresSheet(ss) {
     var fB = '=IF(A' + row + '="","",IFERROR(VLOOKUP(A' + row + ',Config!$A:$C,2,FALSE),""))';
     // C: Video
     var fC = '=IF(A' + row + '="","",IFERROR(VLOOKUP(A' + row + ',Config!$A:$C,3,FALSE),""))';
-    // D: Referee names who scored (multiline)
+    // D: Referee names who scored (multiline) — wrapped in IFERROR for empty-data edge cases
     var refNameParts = [];
     for (var r = 1; r <= NUM_REFEREES; r++) {
       refNameParts.push(
@@ -727,10 +919,11 @@ function _buildFinalScoresSheet(ss) {
         '"",Config!' + _refConfigCol(r) + '$2)'
       );
     }
-    var fD = '=IF(A' + row + '="","",TEXTJOIN(CHAR(10),TRUE,' + refNameParts.join(',') + '))';
+    var fD = '=IF(A' + row + '="","",IFERROR(TEXTJOIN(CHAR(10),TRUE,' + refNameParts.join(',') + '),""))';
     formulasAD.push([fA, fB, fC, fD]);
 
     // F: Refs Agree? — count refs and check agreement on all input elements including fouls
+    //    Wrapped in IFERROR to handle edge cases when no data exists yet
     var refCountParts = [];
     for (var r = 1; r <= NUM_REFEREES; r++) {
       refCountParts.push(
@@ -759,8 +952,8 @@ function _buildFinalScoresSheet(ss) {
     }
 
     formulasF.push([
-      '=IF($A' + row + '="","",IF(' + refCountExpr + '<2,"N/A",' +
-      'IF(AND(' + matchParts.join(',') + '),"Yes","No")))'
+      '=IF($A' + row + '="","",IFERROR(IF(' + refCountExpr + '<2,"N/A",' +
+      'IF(AND(' + matchParts.join(',') + '),"Yes","No")),"N/A"))'
     ]);
 
     // G-X: Override referee VLOOKUP (loop over mapping)
@@ -857,7 +1050,7 @@ function randomizeTeamOrders() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui;
   try { ui = SpreadsheetApp.getUi(); } catch(e) {
-    Logger.log("randomizeTeamOrders must be run from the DECODE Scoring menu, not the script editor.");
+    Logger.log("randomizeTeamOrders must be run from the " + GAME_NAME + " Scoring menu, not the script editor.");
     return;
   }
   var config = ss.getSheetByName("Config");
@@ -877,6 +1070,9 @@ function randomizeTeamOrders() {
     if (response !== ui.Button.YES) return;
   }
 
+  _doRenameRefSheets(ss, config);
+  _hideUnnamedRefSheets(ss, config);
+
   var teamRange = config.getRange("A4:A" + (MAX_TEAMS + 3));
   var teamValues = teamRange.getValues();
   var teams = [];
@@ -890,8 +1086,6 @@ function randomizeTeamOrders() {
     ui.alert("No team numbers found in Config column A (starting row 4).\nPlease enter team numbers first.");
     return;
   }
-
-  _doRenameRefSheets(ss, config);
 
   for (var r = 1; r <= NUM_REFEREES; r++) {
     // Fisher-Yates shuffle
@@ -928,14 +1122,19 @@ function randomizeTeamOrders() {
   );
 }
 
+/** Check whether any referee sheet contains actual scoring data (valid MOTIF values). */
 function _hasAnyScoringData(ss) {
   var config = ss.getSheetByName("Config");
+  var validMotifs = {};
+  for (var i = 0; i < MOTIFS.length; i++) validMotifs[MOTIFS[i]] = true;
+
   for (var r = 1; r <= NUM_REFEREES; r++) {
     var refSheet = findRefSheet(ss, config, r);
     if (!refSheet) continue;
-    var motifData = refSheet.getRange("D" + REF_DATA_START + ":D" + REF_DATA_END).getValues();
+    // Check rows 4 through MAX_TEAMS+4 to handle both old and new layout
+    var motifData = refSheet.getRange("D4:D" + (MAX_TEAMS + 4)).getValues();
     for (var i = 0; i < motifData.length; i++) {
-      if (motifData[i][0] !== "" && motifData[i][0] !== null) return true;
+      if (validMotifs[motifData[i][0]]) return true;
     }
   }
   return false;
@@ -949,7 +1148,7 @@ function renameRefSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui;
   try { ui = SpreadsheetApp.getUi(); } catch(e) {
-    Logger.log("Must be run from the DECODE Scoring menu.");
+    Logger.log("renameRefSheets must be run from the " + GAME_NAME + " Scoring menu, not the script editor.");
     return;
   }
   var config = ss.getSheetByName("Config");
@@ -958,6 +1157,7 @@ function renameRefSheets() {
     return;
   }
   var renamed = _doRenameRefSheets(ss, config);
+  _hideUnnamedRefSheets(ss, config);
   ui.alert("Rename Complete", renamed + " sheet(s) renamed to match Config names.", ui.ButtonSet.OK);
 }
 
@@ -995,7 +1195,7 @@ function _doRenameRefSheets(ss, config) {
   for (var i = 0; i < renames.length; i++) {
     try {
       renames[i].sheet.setName(renames[i].desiredName);
-      renames[i].sheet.getRange("C1").setValue("DECODE 2025-2026 Match Review \u2014 " + renames[i].desiredName);
+      renames[i].sheet.getRange("C1").setValue(GAME_NAME + " " + SEASON + " Match Review \u2014 " + renames[i].desiredName);
       renamed++;
     } catch(e) {
       Logger.log("Failed to rename to " + renames[i].desiredName + ": " + e);
@@ -1015,7 +1215,7 @@ function applyProtection() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var ui;
   try { ui = SpreadsheetApp.getUi(); } catch(e) {
-    Logger.log("applyProtection must be run from the DECODE Scoring menu, not the script editor.");
+    Logger.log("applyProtection must be run from the " + GAME_NAME + " Scoring menu, not the script editor.");
     return;
   }
   var me = Session.getEffectiveUser();
@@ -1119,13 +1319,17 @@ function applyProtection() {
     }
   }
 
+  // Hide unnamed referee sheets (unused referee slots)
+  _hideUnnamedRefSheets(ss, config);
+
   var msg;
   if (hasEmails) {
     msg = "Protection applied with per-referee isolation!\n\n" +
       "- Each referee can ONLY edit their own sheet's scoring cells\n" +
       "- Formula cells, team info, and headers are locked\n" +
       "- FinalScores 'Official Referee' column is restricted to the owner\n" +
-      "- Config sheet is now hidden (right-click any tab > Unhide to access it)\n\n" +
+      "- Config sheet is now hidden (right-click any tab > Unhide to access it)\n" +
+      "- Unused referee sheets are hidden\n\n" +
       "Make sure each referee has been shared on the spreadsheet.";
     if (failedEmails.length > 0) {
       msg += "\n\nWARNING: Could not grant access for:\n" + failedEmails.join("\n") +
@@ -1135,10 +1339,11 @@ function applyProtection() {
     msg = "Protection applied (advisory mode).\n\n" +
       "- Formula cells are protected on all sheets\n" +
       "- Scoring input cells show a warning but are NOT restricted per-referee\n" +
-      "- Config sheet is now hidden (right-click any tab > Unhide to access it)\n\n" +
+      "- Config sheet is now hidden (right-click any tab > Unhide to access it)\n" +
+      "- Unused referee sheets are hidden\n\n" +
       "To enable per-referee isolation:\n" +
       "1. Unhide Config, enter referee emails in row 3\n" +
-      "2. Re-run DECODE Scoring > Apply Sheet Protection";
+      "2. Re-run " + GAME_NAME + " Scoring > Apply Sheet Protection";
   }
 
   ui.alert("Protection Applied", msg, ui.ButtonSet.OK);

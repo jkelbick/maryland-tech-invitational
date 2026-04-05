@@ -4,6 +4,8 @@
 
 A Google Apps Script that builds a complete match review scoring system in Google Sheets for FTC DECODE 2025-2026. Designed for 2-6 referees to independently score solo matches (one match per team, no opponents), with automatic score calculation, disagreement detection, and a Final Scores sheet for the head referee.
 
+The script is parameterized for annual reuse — see [Updating for a New Season](#updating-for-a-new-season).
+
 ## Setup Instructions
 
 1. Create a new Google Spreadsheet (or open the target one)
@@ -15,7 +17,7 @@ A Google Apps Script that builds a complete match review scoring system in Googl
    - Enter referee names in Config row 2 (columns D-I)
    - Enter referee emails in Config row 3 (for per-referee protection)
    - Use **DECODE Scoring > Randomize Team Orders** menu (also renames sheets)
-   - Use **DECODE Scoring > Apply Sheet Protection** menu (this also hides the Config sheet)
+   - Use **DECODE Scoring > Apply Sheet Protection** menu (this also hides Config and unused referee sheets)
 
 ## Sheet Structure
 
@@ -28,13 +30,12 @@ A Google Apps Script that builds a complete match review scoring system in Googl
 - **Columns J-O** (row 4+): Randomized team orders per referee (auto-generated)
 
 ### Referee Sheets (named by referee)
-Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff"). Sheets are initially named "Referee 1" through "Referee 6" and renamed when Randomize or Rename is run.
+Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff"). Sheets are initially named "Referee 1" through "Referee 6" and renamed when Randomize or Rename is run. Unused referee sheets (still named "Referee N") are hidden automatically.
 
-**Row 1**: Title bar (split merge: A1:B1 in frozen zone, C1:W1 in scrollable zone)
-**Row 2**: Referee name (auto from Config), inline instructions, and progress counter ("Scored: X / Y")
-**Row 3**: Point values as a quick reference (×3, ×1, ×2 ea, 5/10, etc.)
-**Row 4**: Column headers (color-coded by section)
-**Row 5+**: Data rows
+**Row 1**: Title bar (split merge: A1:B1 = progress counter in frozen zone, C1:W1 = title in scrollable zone)
+**Row 2**: Point values as a quick reference (×3, ×1, ×2 ea, 5/10, etc.)
+**Row 3**: Column headers (color-coded by section)
+**Row 4+**: Data rows
 
 | Column | Field | Type | Notes |
 |--------|-------|------|-------|
@@ -62,7 +63,7 @@ Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff").
 | V | TOTAL SCORE | **Calculated** | MAX(0, U - T) |
 | W | Notes | Free text | |
 
-Frozen rows: 4 (title, instructions, points, headers). Frozen columns: 2 (Team #, Team Name).
+Frozen rows: 3 (title, points, headers). Frozen columns: 2 (Team #, Team Name).
 
 ### FinalScores Sheet
 Aggregation and score breakdown sheet for the head referee. **First tab** in the spreadsheet. Uses a 3-row header matching last year's layout.
@@ -136,9 +137,26 @@ The referee types the actual artifact colors on the RAMP in order from GATE to S
 - **Foul points subtracted from own score** (official rules add to opponent's score, but these are solo matches with no opponent)
 - **Total score floored at 0** (cannot go negative)
 
+## Updating for a New Season
+
+The script is designed for annual reuse. All game-specific values are in the **GAME CONFIGURATION** section at the top of the file. Refer to the [competition manual](https://ftc-resources.firstinspires.org/ftc/archive/2026/game/manual) for scoring rules and point values. To update for a new FTC season:
+
+1. **`GAME_NAME`** / **`SEASON`** — Change the game name and year (used in titles, menu name)
+2. **Point values** (`PTS_*`) — Update from the competition manual's scoring table
+3. **`MOTIFS`** — Update the allowed gate-field values (the dropdown options for the field that activates scoring)
+4. **`LEAVE_OPTIONS`** / **`BASE_OPTIONS`** — Update dropdown choices if the new game changes these
+5. **`RAMP_REGEX`** / **`RAMP_MAX_CHARS`** — Update if the text-entry format changes; remove RAMP logic if the new game has no equivalent
+6. **Column headers** — In `_buildRefereeSheet()`, update the `headers` array for new scoring elements
+7. **Scoring formulas** — In `_buildRefereeSheet()`, update the formula comments and expressions in the DATA ROWS section
+8. **`RC` column indices** — If columns are added, removed, or reordered, update the `RC` object
+9. **FinalScores mapping** — In `_buildFinalScoresSheet()`, update `vlookupMap`, `elemCols`, `headers`, and category groups
+10. **Help text** — In the DATA VALIDATION section, update the text shown on invalid input
+11. **Documentation** — Update this README and the Scoring Guide
+12. Run `buildAll()` to generate all sheets from scratch
+
 ## Authorization
 
-All user-callable functions (`buildAll`, `confirmRebuild`, `randomizeTeamOrders`, `renameRefSheets`, `applyProtection`) require the current user's email to match one of the authorized SHA-256 hashes stored in `AUTHORIZED_HASHES`. The user's email is hashed at runtime via `Utilities.computeDigest()` and compared against the stored hashes — no cleartext emails appear in the source code.
+All user-callable functions (`buildAll`, `confirmRebuild`, `randomizeTeamOrders`, `renameRefSheets`, `applyProtection`, `updateSheets`) require the current user's email to match one of the authorized SHA-256 hashes stored in `AUTHORIZED_HASHES`. The user's email is hashed at runtime via `Utilities.computeDigest()` and compared against the stored hashes — no cleartext emails appear in the source code.
 
 Unauthorized users see an alert and the function exits immediately.
 
@@ -151,17 +169,21 @@ Unauthorized users see an alert and the function exits immediately.
 - FinalScores column E (Override Name selection) restricted to owner only
 - Config restricted to owner only (except team data and referee info)
 - Config sheet hidden after protection is applied (unhide via tab right-click > Unhide)
+- Unused referee sheets hidden automatically
 
 ### Without Emails (Advisory Mode)
 - Formula cells protected with warnings
 - No per-referee enforcement (anyone can edit any input cell)
 - Config sheet hidden after protection is applied
+- Unused referee sheets hidden automatically
 
 ## Named Referee Sheets
 
 Referee sheets are named from Config row 2 (columns D-I). Initially "Referee 1" through "Referee 6", they are renamed when:
 - **Randomize Team Orders** is run (auto-renames)
 - **Rename Referee Sheets from Config** is run manually
+
+Sheets that still have default "Referee N" names (unused referee slots) are hidden automatically after renaming or applying protection.
 
 FinalScores uses `INDIRECT` formulas referencing Config names, so sheet name changes are reflected automatically.
 
@@ -171,23 +193,37 @@ FinalScores uses `INDIRECT` formulas referencing Config names, so sheet name cha
 
 ## Key Technical Details
 
+### Non-Destructive Update
+
+The **Update Sheets (Non-Destructive)** menu item (`updateSheets()`) rebuilds all referee sheets and FinalScores with the current template while preserving:
+- Team orders (column A on referee sheets)
+- Referee scoring inputs (columns D-O and W)
+- Official Referee selections (column E on FinalScores)
+
+This is used to apply template changes (formulas, formatting, validation) to an existing spreadsheet without losing referee work. Sheet protection is NOT reapplied — run "Apply Sheet Protection" afterward if needed.
+
+The function auto-detects the current sheet layout (old 4-row header vs new 3-row header) when reading data to ensure compatibility during template transitions.
+
 ### Formula: PATTERN Match Calculation
 ```
-=IF(OR($A5="",$D5=""),"",IF(LEN(H5)=0,0,
-  SUMPRODUCT((MID(UPPER(H5),SEQUENCE(LEN(H5)),1)=
-  MID(REPT(D5,3),SEQUENCE(LEN(H5)),1))*1)))
+=IF(OR($A4="",$D4=""),"",IF(LEN(H4)=0,0,
+  SUMPRODUCT((MID(UPPER(H4),SEQUENCE(LEN(H4)),1)=
+  MID(REPT(D4,3),SEQUENCE(LEN(H4)),1))*1)))
 ```
-Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(D5,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions.
+Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(D4,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions.
 
 ### Formula: INDIRECT Cross-Sheet References
 FinalScores uses INDIRECT to reference referee sheets by name from Config:
 ```
-=VLOOKUP($A5, INDIRECT("'"&Config!D$2&"'!$A:$W"), 22, FALSE)
+=VLOOKUP($A4, INDIRECT("'"&Config!D$2&"'!$A:$W"), 22, FALSE)
 ```
 This allows sheet tab names to change without breaking formulas.
 
 ### Formula: Agreement Check
-Uses `FILTER`/`UNIQUE`/`ROWS` to compare values across all referees who scored a team. Each referee's value is fetched via INDIRECT VLOOKUP. All 12 input columns are checked: MOTIF, LEAVE, Auto CLASSIFIED/OVERFLOW/RAMP, TeleOp CLASSIFIED/OVERFLOW/DEPOT/RAMP, BASE, Minor Fouls, and Major Fouls. Blank fields on scored rows (MOTIF filled) are treated as "(blank)" - distinct from an explicit 0 or any entered value. Text fields are normalized to uppercase for comparison.
+Uses `FILTER`/`UNIQUE`/`ROWS` to compare values across all referees who scored a team. Each referee's value is fetched via INDIRECT VLOOKUP. All 12 input columns are checked: MOTIF, LEAVE, Auto CLASSIFIED/OVERFLOW/RAMP, TeleOp CLASSIFIED/OVERFLOW/DEPOT/RAMP, BASE, Minor Fouls, and Major Fouls. Blank fields on scored rows (MOTIF filled) are treated as "(blank)" - distinct from an explicit 0 or any entered value. Text fields are normalized to uppercase for comparison. The formula is wrapped in IFERROR to handle edge cases when no data exists yet.
+
+### Formula: Scored By
+Uses TEXTJOIN to list referee names who have scored a team (MOTIF is non-empty on their sheet). Wrapped in IFERROR to handle edge cases when referee sheets have no data yet.
 
 ### Blank vs Zero
 A blank cell on a scored row means the referee forgot to enter a value. An explicit 0 means they intentionally scored zero:
@@ -216,6 +252,9 @@ Fisher-Yates shuffle ensures each referee sees teams in a different random order
 ### Two-Phase Rename
 Referee sheet renaming uses a two-phase approach: first rename all sheets to temporary names (`_temp_rename_N`), then rename to final desired names. This prevents collisions when referee names are swapped (e.g., swapping "Alice" and "Bob").
 
+### Hidden Unnamed Sheets
+After renaming or applying protection, referee sheets that still have default "Referee N" names are automatically hidden. This keeps the tab bar clean when fewer than 6 referees are used. Hidden sheets can be unhidden via tab right-click > Unhide.
+
 ### Merge / Freeze Constraint
 Google Sheets does not allow frozen rows or columns to split a merged cell. All merges are split at frozen boundaries: referee sheet title uses A1:B1 (frozen) + C1:W1 (scrollable); FinalScores row 2 uses A2:C2 (frozen) + D2:F2 (scrollable). FinalScores row 1 groups naturally align with the 3-column freeze (A1:C1 = "Teams").
 
@@ -227,16 +266,17 @@ All formula writes use batch `setFormulas()` and `setValues()` instead of indivi
 
 ### Data Validation
 - **Config**: Team numbers validated for uniqueness; referee names validated for uniqueness and restricted to characters safe for sheet names and INDIRECT references (letters, numbers, spaces, hyphens, periods, underscores; no leading spaces)
-- **Referee sheets**: MOTIF, LEAVE, BASE use dropdown lists; numeric fields validated as whole numbers >= 0; RAMP Colors validated as 1-9 G/P characters via regex
+- **Referee sheets**: MOTIF, LEAVE, BASE use dropdown lists from configuration constants; numeric fields validated as whole numbers >= 0; RAMP Colors validated against RAMP_REGEX
 - **FinalScores**: Official Referee dropdown populated from Config referee names range
 
 ## Menu Items
 
 | Menu Item | Function | Description |
 |-----------|----------|-------------|
-| Randomize Team Orders | `randomizeTeamOrders()` | Shuffles teams for each referee, renames sheets |
-| Rename Referee Sheets from Config | `renameRefSheets()` | Renames sheet tabs to match Config names |
-| Apply Sheet Protection | `applyProtection()` | Sets up sheet/range protections, hides Config |
+| Randomize Team Orders | `randomizeTeamOrders()` | Shuffles teams for each referee, renames sheets, hides unused sheets |
+| Rename Referee Sheets from Config | `renameRefSheets()` | Renames sheet tabs to match Config names, hides unused sheets |
+| Apply Sheet Protection | `applyProtection()` | Sets up sheet/range protections, hides Config and unused sheets |
+| Update Sheets (Non-Destructive) | `updateSheets()` | Rebuilds layouts/formulas preserving scoring data |
 | Rebuild All Sheets (DESTRUCTIVE) | `confirmRebuild()` -> `buildAll()` | Deletes and recreates everything |
 
 ## File Inventory

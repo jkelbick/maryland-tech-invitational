@@ -17,7 +17,7 @@ For game rules, scoring definitions, and field element descriptions, refer to th
 
 Open the spreadsheet and click the tab at the bottom with your name. Each referee has their own sheet with a unique randomized team order. You can only edit your own sheet's scoring cells.
 
-The top 4 rows (title, instructions, point values, headers) and the first 2 columns (Team #, Team Name) stay visible as you scroll. Your progress counter (**Scored: X / Y**) is at the right end of row 2 — scroll right if you don't see it.
+The top 3 rows (title, point values, headers) and the first 2 columns (Team #, Team Name) stay visible as you scroll. Your progress counter (**Scored: X / Y**) is in the top-left corner of the sheet (always visible).
 
 ### Scoring a Match
 
@@ -80,7 +80,7 @@ If there are no artifacts on the RAMP, leave the cell blank.
 
 ### Point Values
 
-These are shown in row 3 of your sheet for quick reference. See the [DECODE Competition Manual](https://ftc-resources.firstinspires.org/ftc/archive/2026/game/manual) Section 10.5 (Table 10-2) for the official point values.
+These are shown in row 2 of your sheet for quick reference. See the [DECODE Competition Manual](https://ftc-resources.firstinspires.org/ftc/archive/2026/game/manual) Section 10.5 (Table 10-2) for the official point values.
 
 | Scoring Element | Points |
 |----------------|--------|
