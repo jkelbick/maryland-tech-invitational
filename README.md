@@ -206,11 +206,10 @@ FinalScores uses `INDIRECT` formulas referencing Config names, so sheet name cha
 Required fields (12 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Auto RAMP, Tel CLS, Tel OVF, Tel DEPOT, Tel RAMP, BASE. "Not Shown" counts as a valid MOTIF value (not empty).
 
 **FinalScores** (applied in priority order):
-1. **Red per-field disagreement** — individual score columns highlighted red when referees disagree on that specific field
-2. **Agree column formatting** — green (Yes), red (No), gray (N/A) for Refs Agree? (col F)
-3. **Yellow row disagreement** — entire row highlighted yellow when Refs Agree? = "No"
-4. **Orange missing Official Referee** — col E highlighted when no selection made (and multiple refs scored)
-5. **Zebra striping** on even rows
+1. **Agree column formatting** — green (Yes), red (No), gray (N/A) for Refs Agree? (col F)
+2. **Yellow row disagreement** — entire row highlighted yellow when Refs Agree? = "No"
+3. **Orange missing Official Referee** — col E highlighted when no selection made (and multiple refs scored)
+4. **Zebra striping** on even rows
 
 ## Key Technical Details
 

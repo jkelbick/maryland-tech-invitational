@@ -1369,36 +1369,7 @@ function _buildFinalScoresSheet(ss) {
   let agreeCol = cFS(FS.AGREE);
   let agreeRange = [sheet.getRange(agreeCol + ds + ":" + agreeCol + de)];
 
-  // 1. Per-field red disagreement (score columns, excluding G_RULES)
-  // Build per-field CF for each vlookupMap entry except G_RULES
-  for (let v = 0; v < vlookupMap.length; v++) {
-    let fsCol = vlookupMap[v][0];
-    let rcCol = vlookupMap[v][1];
-    if (rcCol === RC.G_RULES) continue; // Skip G_RULES
-
-    let isNum = numericCols.indexOf(rcCol) !== -1;
-    let vParts = [];
-    for (let r = 1; r <= NUM_REFEREES; r++) {
-      let valExpr = 'IFERROR(VLOOKUP($A' + ds + ',' + indRef(r) + ',' + rcCol + ',FALSE),"")';
-      let scoredExpr = hasScored(r, ds);
-      if (isNum) {
-        vParts.push('IF(' + scoredExpr + ',IF(' + valExpr + '="","(blank)",' + valExpr + '),"")');
-      } else {
-        vParts.push('IF(' + scoredExpr + ',IF(' + valExpr + '="","(blank)",UPPER(' + valExpr + ')),"")');
-      }
-    }
-    let joined = vParts.join(';');
-    let cfFormula = '=AND($A' + ds + '<>"",$' + agreeCol + ds + '="No",' +
-      'NOT(IFERROR(ROWS(UNIQUE(FILTER({' + joined + '},{' + joined + '}<>"")))=1,TRUE)))';
-
-    rules.push(SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied(cfFormula)
-      .setBackground("#FF9999")
-      .setRanges([sheet.getRange(_colLetter(fsCol) + ds + ":" + _colLetter(fsCol) + de)])
-      .build());
-  }
-
-  // 2. Agree column Yes/No/N/A formatting
+  // 1. Agree column Yes/No/N/A formatting
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenTextEqualTo("Yes").setBackground("#C6EFCE").setFontColor("#006100").setBold(true)
     .setRanges(agreeRange).build());
@@ -1409,21 +1380,21 @@ function _buildFinalScoresSheet(ss) {
     .whenTextEqualTo("N/A").setBackground("#F2F2F2").setFontColor("#5A5A5A").setBold(true)
     .setRanges(agreeRange).build());
 
-  // 3. Yellow row disagreement (Refs Agree? = "No")
+  // 2. Yellow row disagreement (Refs Agree? = "No")
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenFormulaSatisfied('=AND($A' + ds + '<>"",$' + agreeCol + ds + '="No")')
     .setBackground("#FFFF00")
     .setRanges([sheet.getRange("A" + ds + ":" + fsLastVisCol + de)])
     .build());
 
-  // 4. Missing Official Ref orange
+  // 3. Missing Official Ref orange
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenFormulaSatisfied('=AND($A' + ds + '<>"",$' + _colLetter(FS.OFFICIAL_REF) + ds + '="")')
     .setBackground("#FDE9D9")
     .setRanges([sheet.getRange(_colLetter(FS.OFFICIAL_REF) + ds + ":" + _colLetter(FS.OFFICIAL_REF) + de)])
     .build());
 
-  // 5. Zebra striping
+  // 4. Zebra striping
   rules.push(SpreadsheetApp.newConditionalFormatRule()
     .whenFormulaSatisfied('=AND($A' + ds + '<>"",ISEVEN(ROW()))')
     .setBackground("#F0F4FA")
