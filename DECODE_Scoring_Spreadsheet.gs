@@ -159,17 +159,17 @@ const FS_DATA_END = MAX_TEAMS + 3;
 
 // Referee sheet column layout (A-X, 24 columns):
 //   A=Team#(auto)  B=Name(auto)  C=Video(auto)
-//   D=MOTIF  E=Notes
-//   F=TOTAL(calc)  G=Score w/o Fouls(calc)  H=Auto Score(calc)  I=TeleOp Score(calc)  J=Foul Deduction(calc)
-//   K=Minor Fouls  L=Major Fouls  M=G Rules(multiselect)
-//   N=LEAVE  O=Auto CLS  P=Auto OVF  Q=Auto RAMP Colors  R=Auto PAT(calc)
+//   D=Notes
+//   E=TOTAL(calc)  F=Score w/o Fouls(calc)  G=Auto Score(calc)  H=TeleOp Score(calc)  I=Foul Deduction(calc)
+//   J=Minor Fouls  K=Major Fouls  L=G Rules(multiselect)
+//   M=MOTIF  N=LEAVE  O=Auto CLS  P=Auto OVF  Q=Auto RAMP Colors  R=Auto PAT(calc)
 //   S=Tel CLS  T=Tel OVF  U=Tel DEPOT  V=Tel RAMP Colors  W=Tel PAT(calc)
 //   X=BASE
 const RC = {
-  TEAM: 1, NAME: 2, VIDEO: 3, MOTIF: 4, NOTES: 5,
-  TOTAL: 6, SCORE_NO_FOULS: 7, AUTO_SCORE: 8, TEL_SCORE: 9, FOUL_DED: 10,
-  MINOR: 11, MAJOR: 12, G_RULES: 13,
-  LEAVE: 14, AUTO_CLS: 15, AUTO_OVF: 16, AUTO_RAMP: 17, AUTO_PAT: 18,
+  TEAM: 1, NAME: 2, VIDEO: 3, NOTES: 4,
+  TOTAL: 5, SCORE_NO_FOULS: 6, AUTO_SCORE: 7, TEL_SCORE: 8, FOUL_DED: 9,
+  MINOR: 10, MAJOR: 11, G_RULES: 12,
+  MOTIF: 13, LEAVE: 14, AUTO_CLS: 15, AUTO_OVF: 16, AUTO_RAMP: 17, AUTO_PAT: 18,
   TEL_CLS: 19, TEL_OVF: 20, TEL_DEPOT: 21, TEL_RAMP: 22, TEL_PAT: 23,
   BASE: 24
 };
@@ -272,8 +272,11 @@ function _extractColumn(data2D, colIndex0) {
  * New layout: col 5 = "Notes". Old layout: col 5 = "LEAVE".
  */
 function _detectLayoutVersion(sheet) {
-  let val = sheet.getRange(3, 5).getValue().toString();
-  return (val.indexOf("Notes") !== -1 || val.indexOf("notes") !== -1) ? "new" : "old";
+  let val4 = sheet.getRange(3, 4).getValue().toString().toLowerCase();
+  if (val4.indexOf("notes") !== -1) return "new"; // current: MOTIF at col M, Notes at col D
+  let val5 = sheet.getRange(3, 5).getValue().toString().toLowerCase();
+  if (val5.indexOf("notes") !== -1) return "v2"; // prior 24-col: MOTIF at col D, Notes at col E
+  return "old"; // original 23-col layout
 }
 
 /** Returns the Config column letter for a given referee number (1-6 -> D-I). */
@@ -485,7 +488,7 @@ function updateSheets() {
     return;
   }
 
-  // Old layout column indices (for migration from 23-col layout)
+  // Layout column indices for migration from older layouts
   let OLD_RC = {
     TEAM: 1, NAME: 2, VIDEO: 3, MOTIF: 4, LEAVE: 5,
     AUTO_CLS: 6, AUTO_OVF: 7, AUTO_RAMP: 8,
@@ -493,6 +496,14 @@ function updateSheets() {
     BASE: 13, MINOR: 14, MAJOR: 15,
     AUTO_PAT: 16, AUTO_SCORE: 17, TEL_PAT: 18, TEL_SCORE: 19,
     FOUL_DED: 20, SCORE_NO_FOULS: 21, TOTAL: 22, NOTES: 23
+  };
+  let V2_RC = {
+    TEAM: 1, NAME: 2, VIDEO: 3, MOTIF: 4, NOTES: 5,
+    TOTAL: 6, SCORE_NO_FOULS: 7, AUTO_SCORE: 8, TEL_SCORE: 9, FOUL_DED: 10,
+    MINOR: 11, MAJOR: 12, G_RULES: 13,
+    LEAVE: 14, AUTO_CLS: 15, AUTO_OVF: 16, AUTO_RAMP: 17, AUTO_PAT: 18,
+    TEL_CLS: 19, TEL_OVF: 20, TEL_DEPOT: 21, TEL_RAMP: 22, TEL_PAT: 23,
+    BASE: 24
   };
 
   // --- Save referee scoring data (layout-aware per-field extraction) ---
@@ -505,8 +516,8 @@ function updateSheets() {
     let dataStart = _detectRefDataStart(sheet);
     let dataEnd = dataStart + MAX_TEAMS - 1;
     let layoutVer = _detectLayoutVersion(sheet);
-    let src = (layoutVer === "new") ? RC : OLD_RC;
-    let numCols = (layoutVer === "new") ? 24 : 23;
+    let src = (layoutVer === "old") ? OLD_RC : (layoutVer === "v2") ? V2_RC : RC;
+    let numCols = (layoutVer === "old") ? 23 : 24;
 
     let allData = sheet.getRange(dataStart, 1, MAX_TEAMS, numCols).getValues();
 
@@ -750,8 +761,8 @@ function _buildRefereeSheet(ss, config, refNum) {
   sheet.getRange("A1:C1").setFontSize(11).setFontWeight("bold")
     .setBackground("#1F4E79").setFontColor("white")
     .setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sheet.getRange(cD + "1").setValue(GAME_NAME + " " + SEASON + " Match Review \u2014 " + sheetName);
-  sheet.getRange(cD + "1:" + lastCol + "1").merge().setFontSize(14).setFontWeight("bold")
+  sheet.getRange("D1").setValue(GAME_NAME + " " + SEASON + " Match Review \u2014 " + sheetName);
+  sheet.getRange("D1:" + lastCol + "1").merge().setFontSize(14).setFontWeight("bold")
     .setBackground("#1F4E79").setFontColor("white").setHorizontalAlignment("center");
 
   // ---- ROW 2: Point values (hidden quick reference) ----
@@ -775,11 +786,11 @@ function _buildRefereeSheet(ss, config, refNum) {
   // ---- ROW 3: Column Headers ----
   let headers = [
     "Team #", "Team Name", "Video",                       // A-C
-    "MOTIF", "Notes",                                      // D-E
-    "TOTAL\nSCORE", "Score w/o\nFouls", "Auto\nScore",    // F-H
-    "TeleOp\nScore", "Foul\nDeduction",                    // I-J
-    "Minor\nFouls", "Major\nFouls", "G Rules",             // K-M
-    "LEAVE\n(Yes/No)", "Auto\nCLASSIFIED", "Auto\nOVERFLOW", // N-P
+    "Notes",                                               // D
+    "TOTAL\nSCORE", "Score w/o\nFouls", "Auto\nScore",    // E-G
+    "TeleOp\nScore", "Foul\nDeduction",                    // H-I
+    "Minor\nFouls", "Major\nFouls", "G Rules",             // J-L
+    "MOTIF", "LEAVE\n(Yes/No)", "Auto\nCLASSIFIED", "Auto\nOVERFLOW", // M-P
     "Auto RAMP\nColors\n(G/P)", "Auto PATTERN\nCount",     // Q-R
     "TeleOp\nCLASSIFIED", "TeleOp\nOVERFLOW", "TeleOp\nDEPOT", // S-U
     "TeleOp RAMP\nColors\n(G/P)", "TeleOp PATTERN\nCount", // V-W
@@ -950,11 +961,11 @@ function _buildRefereeSheet(ss, config, refNum) {
   sheet.getRange("A3:" + lastCol + de).setBorder(true, true, true, true, true, true,
     "#B4B4B4", SpreadsheetApp.BorderStyle.SOLID);
 
-  // Column widths: A=Team#, B=Name, C=Video, D=MOTIF, E=Notes, F=TOTAL, G=ScoreNoFouls,
-  // H=AutoScore, I=TelScore, J=FoulDed, K=Minor, L=Major, M=GRules, N=LEAVE,
-  // O=AutoCLS, P=AutoOVF, Q=AutoRAMP, R=AutoPAT, S=TelCLS, T=TelOVF, U=TelDEPOT,
-  // V=TelRAMP, W=TelPAT, X=BASE
-  let colWidths = [85,150,250,80,200,90,85,80,85,80,75,75,80,75,90,90,120,85,100,90,80,120,85,110];
+  // Column widths: A=Team#, B=Name, C=Video, D=Notes, E=TOTAL, F=ScoreNoFouls,
+  // G=AutoScore, H=TelScore, I=FoulDed, J=Minor, K=Major, L=GRules, M=MOTIF,
+  // N=LEAVE, O=AutoCLS, P=AutoOVF, Q=AutoRAMP, R=AutoPAT, S=TelCLS, T=TelOVF,
+  // U=TelDEPOT, V=TelRAMP, W=TelPAT, X=BASE
+  let colWidths = [85,150,250,200,90,85,80,85,80,75,75,80,80,75,90,90,120,85,100,90,80,120,85,110];
   for (let c = 0; c < colWidths.length; c++) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
   }
@@ -1518,8 +1529,9 @@ function _hasAnyScoringData(ss) {
     if (!refSheet) continue;
     let dataStart = _detectRefDataStart(refSheet);
     let layoutVer = _detectLayoutVersion(refSheet);
-    let src = (layoutVer === "new") ? RC : {MOTIF: 4, LEAVE: 5, AUTO_CLS: 6};
-    let numCols = (layoutVer === "new") ? 24 : 23;
+    let src = (layoutVer === "old") ? {MOTIF: 4, LEAVE: 5, AUTO_CLS: 6} :
+              (layoutVer === "v2") ? {MOTIF: 4, LEAVE: 14, AUTO_CLS: 15} : RC;
+    let numCols = (layoutVer === "old") ? 23 : 24;
 
     // Single batch read for all columns
     let allData = refSheet.getRange(dataStart, 1, MAX_TEAMS, numCols).getValues();
@@ -1664,9 +1676,9 @@ function applyProtection() {
     _restrictEditors(sheetProt, [meEmail]);
 
     // Non-contiguous input ranges (5 blocks)
-    let inputRange1 = sheet.getRange(cD + REF_DATA_START + ":" + cE + REF_DATA_END);  // MOTIF + Notes
+    let inputRange1 = sheet.getRange(cE + REF_DATA_START + ":" + cE + REF_DATA_END);  // Notes
     let inputRange2 = sheet.getRange(cK + REF_DATA_START + ":" + cM + REF_DATA_END);  // Minor, Major, G Rules
-    let inputRange3 = sheet.getRange(cN + REF_DATA_START + ":" + cQ + REF_DATA_END);  // LEAVE, Auto CLS/OVF/RAMP
+    let inputRange3 = sheet.getRange(cD + REF_DATA_START + ":" + cQ + REF_DATA_END);  // MOTIF, LEAVE, Auto CLS/OVF/RAMP
     let inputRange4 = sheet.getRange(cS + REF_DATA_START + ":" + cV + REF_DATA_END);  // Tel CLS/OVF/DEPOT/RAMP
     let inputRange5 = sheet.getRange(cX + REF_DATA_START + ":" + cX + REF_DATA_END);  // BASE
     sheetProt.setUnprotectedRanges([inputRange1, inputRange2, inputRange3, inputRange4, inputRange5]);

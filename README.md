@@ -42,16 +42,16 @@ Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff").
 | A | Team # | Auto-filled | From randomization |
 | B | Team Name | **Auto (VLOOKUP)** | From Config |
 | C | Video | **Auto (VLOOKUP)** | From Config |
-| D | MOTIF | Dropdown (GPP/PGP/PPG/Not Shown) | Input field; "Not Shown" or blank → PATTERN=0 |
-| E | Notes | Free text | ~200px wide |
-| F | TOTAL SCORE | **Calculated** | MAX(0, Score w/o Fouls - Foul Deduction) |
-| G | Score w/o Fouls | **Calculated** | Auto + TeleOp (before foul deduction) |
-| H | Auto Score | **Calculated** | LEAVE(3) + CLS×3 + OVF×1 + PAT×2 |
-| I | TeleOp Score | **Calculated** | CLS×3 + OVF×1 + DEPOT×1 + PAT×2 + BASE(0/5/10) |
-| J | Foul Deduction | **Calculated** | Minor×5 + Major×15 |
-| K | Minor Fouls | Whole number | |
-| L | Major Fouls | Whole number | |
-| M | G Rules | Multiselect | Codes of violated game rules (see [G Rules](#g-rules-multiselect)) |
+| D | Notes | Free text | ~200px wide |
+| E | TOTAL SCORE | **Calculated** | MAX(0, Score w/o Fouls - Foul Deduction) |
+| F | Score w/o Fouls | **Calculated** | Auto + TeleOp (before foul deduction) |
+| G | Auto Score | **Calculated** | LEAVE(3) + CLS×3 + OVF×1 + PAT×2 |
+| H | TeleOp Score | **Calculated** | CLS×3 + OVF×1 + DEPOT×1 + PAT×2 + BASE(0/5/10) |
+| I | Foul Deduction | **Calculated** | Minor×5 + Major×15 |
+| J | Minor Fouls | Whole number | |
+| K | Major Fouls | Whole number | |
+| L | G Rules | Multiselect | Codes of violated game rules (see [G Rules](#g-rules-multiselect)) |
+| M | MOTIF | Dropdown (GPP/PGP/PPG/Not Shown) | Input field; "Not Shown" or blank → PATTERN=0 |
 | N | LEAVE | Dropdown (Yes/No) | Did robot leave LAUNCH LINE during AUTO? |
 | O | Auto CLASSIFIED | Whole number | Artifacts through SQUARE to RAMP during AUTO |
 | P | Auto OVERFLOW | Whole number | Artifacts through SQUARE not to RAMP during AUTO |
@@ -203,7 +203,7 @@ FinalScores uses `INDIRECT` formulas referencing Config names, so sheet name cha
 4. **Orange unscored rows** — team# present but no data entered at all
 5. **Zebra striping** on even rows
 
-Required fields (10 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Tel CLS, Tel OVF, Tel DEPOT, BASE. "Not Shown" counts as a valid MOTIF value (not empty).
+Required fields (12 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Auto RAMP, Tel CLS, Tel OVF, Tel DEPOT, Tel RAMP, BASE. "Not Shown" counts as a valid MOTIF value (not empty).
 
 **FinalScores** (applied in priority order):
 1. **Red per-field disagreement** — individual score columns highlighted red when referees disagree on that specific field
@@ -223,10 +223,10 @@ The **Update Sheets (Non-Destructive)** menu item (`updateSheets()`) rebuilds al
 
 This is used to apply template changes (formulas, formatting, validation) to an existing spreadsheet without losing referee work. Sheet protection is NOT reapplied — run "Apply Sheet Protection" afterward if needed.
 
-The function auto-detects the current sheet layout (old 23-column vs new 24-column) when reading data to ensure compatibility during template transitions. Old-layout data is mapped to new column positions automatically; the G Rules column will be empty after migration (it didn't exist in the old layout).
+The function auto-detects the current sheet layout (old 23-column, v2 24-column with MOTIF at D, or current 24-column with MOTIF at M) when reading data to ensure compatibility during template transitions. Old-layout data is mapped to new column positions automatically; the G Rules column will be empty after migration from the original 23-column layout (it didn't exist).
 
 ### G Rules Multiselect
-The G Rules column (M on referee sheets, O on FinalScores) allows referees to record which game rules were violated during a match. All 53 rules from the DECODE competition manual (Section 11) are available as dropdown options.
+The G Rules column (L on referee sheets, O on FinalScores) allows referees to record which game rules were violated during a match. All 53 rules from the DECODE competition manual (Section 11) are available as dropdown options.
 
 **How it works:**
 - A hidden "Rules" sheet stores the full text of all 53 rules (used as the dropdown data source via `requireValueInRange`)
@@ -244,7 +244,7 @@ The `G_RULES` constant in the script contains the full text of all rules. To upd
   SUMPRODUCT((MID(UPPER(Q4),SEQUENCE(LEN(Q4)),1)=
   MID(REPT($D4,3),SEQUENCE(LEN(Q4)),1))*1))))
 ```
-Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(D4,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions. Returns 0 when MOTIF is blank or "Not Shown".
+Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(M4,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions. Returns 0 when MOTIF is blank or "Not Shown".
 
 ### Formula: INDIRECT Cross-Sheet References
 FinalScores uses INDIRECT to reference referee sheets by name from Config:
@@ -290,7 +290,7 @@ Blank required cells on non-newest unfinished rows are highlighted red.
 Each referee sheet stores its index in a note on cell A1 (`ref_index:N`). This allows the script to find sheets even after they've been renamed, if the Config name no longer matches a fallback.
 
 ### Randomization
-Fisher-Yates shuffle ensures each referee sees teams in a different random order. A guard checks for existing MOTIF data before allowing re-randomization to prevent data corruption.
+Fisher-Yates shuffle ensures each referee sees teams in a different random order. A guard checks for existing scoring data before allowing re-randomization to prevent data corruption.
 
 ### Two-Phase Rename
 Referee sheet renaming uses a two-phase approach: first rename all sheets to temporary names (`_temp_rename_N`), then rename to final desired names. This prevents collisions when referee names are swapped (e.g., swapping "Alice" and "Bob").
