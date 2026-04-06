@@ -1238,28 +1238,22 @@ function _buildFinalScoresSheet(ss) {
     }
     let refCountExpr = '(' + refCountParts.join('+') + ')';
 
-    // F: Refs Agree? — compare all elemCols across scored refs
-    let matchParts = [];
-    for (let e = 0; e < elemCols.length; e++) {
-      let ec = elemCols[e];
-      let isNum = numericCols.indexOf(ec) !== -1;
-      let vParts = [];
-      for (let r = 1; r <= NUM_REFEREES; r++) {
-        let valExpr = 'IFERROR(VLOOKUP($A' + row + ',' + indRef(r) + ',' + ec + ',FALSE),"")';
-        let scoredExpr = hasScored(r, row);
-        if (isNum) {
-          vParts.push('IF(' + scoredExpr + ',IF(' + valExpr + '="","(blank)",' + valExpr + '),"")');
-        } else {
-          vParts.push('IF(' + scoredExpr + ',IF(' + valExpr + '="","(blank)",UPPER(' + valExpr + ')),"")');
-        }
+    // F: Refs Agree? — concatenate all elemCol values per referee into one string, then compare.
+    // This reduces 12 separate UNIQUE/FILTER checks to 1, keeping formula under 50,000 char limit.
+    let concatParts = [];
+    for (let r = 1; r <= NUM_REFEREES; r++) {
+      let fieldParts = [];
+      for (let e = 0; e < elemCols.length; e++) {
+        fieldParts.push('IFERROR(VLOOKUP($A' + row + ',' + indRef(r) + ',' + elemCols[e] + ',FALSE),"")');
       }
-      matchParts.push(
-        'IFERROR(ROWS(UNIQUE(FILTER({' + vParts.join(';') + '},{' + vParts.join(';') + '}<>"")))=1,TRUE)'
+      concatParts.push(
+        'IF(' + hasScored(r, row) + ',UPPER(' + fieldParts.join('&"|"&') + '),"")'
       );
     }
+    let concatJoined = concatParts.join(';');
     formulasF.push([
       '=IF(OR($A' + row + '="",' + refCountExpr + '=0),"",IFERROR(IF(' + refCountExpr + '=1,"N/A",' +
-      'IF(AND(' + matchParts.join(',') + '),"Yes","No")),"N/A"))'
+      'IF(IFERROR(ROWS(UNIQUE(FILTER({' + concatJoined + '},{' + concatJoined + '}<>"")))=1,TRUE),"Yes","No")),"N/A"))'
     ]);
 
     // AA: effectiveRef — Official Ref if set, else auto-select if exactly 1 ref scored
