@@ -1205,8 +1205,9 @@ function onEdit(e) {
   let result = codes.join(", ");
   range.clearDataValidation();
   range.setValue(result);
-  // Shrink column back to intended width after dropdown expanded it
-  sheet.setColumnWidth(RC.G_RULES, 55);
+  // Row height auto-expanded for the full rule text; shrink back to fit short codes
+  SpreadsheetApp.flush();
+  sheet.autoResizeRows(row, 1);
 
   // If all codes removed, restore dropdown for next selection
   if (!result) {
