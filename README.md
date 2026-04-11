@@ -105,7 +105,7 @@ No hidden columns. PATTERN Count columns are on referee sheets only (not shown o
 
 Frozen rows: 3 (category headers, point values, column names). Frozen columns: 3 (Team #, Name, Video).
 
-**Per-field agreement mode** (no Official Referee selected, 2+ refs scored): Each scoring field (H-Z) independently checks whether all referees agree on that field's value. Agreed values are displayed normally. Disagreed fields show empty with a **red background**, making it easy to identify exactly which fields need attention. The row also gets a yellow background (lower priority than per-field red).
+**Per-field agreement mode** (no Official Referee selected, 2+ refs scored): Each scoring field (H-X) independently checks whether all referees agree on that field's value. Agreed values are displayed normally. Disagreed fields show empty with a **red background**, making it easy to identify exactly which fields need attention. The row also gets a yellow background (lower priority than per-field red).
 
 **Effective referee mode** (Official Referee selected or single ref): That referee's data is shown directly for all fields. When only one referee has scored a team, that referee's data is auto-displayed without needing to select them.
 
