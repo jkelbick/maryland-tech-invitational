@@ -371,6 +371,7 @@ function onOpen() {
   try {
     SpreadsheetApp.getUi().createMenu(GAME_NAME + " Scoring")
       .addItem("Randomize Team Orders", "randomizeTeamOrders")
+      .addItem("Reorder Active Sheet to Config Order", "reorderToConfigOrder")
       .addItem("Rename Referee Sheets from Config", "renameRefSheets")
       .addSeparator()
       .addItem("Apply Sheet Protection", "applyProtection")
@@ -1149,17 +1150,15 @@ function _buildFinalScoresSheet(ss) {
   if (oldSheet) ss.deleteSheet(oldSheet);
   sheet.setName("FinalScores");
 
-  // FinalScores column constants
+  // FinalScores column constants (24 cols, A-X, no hidden columns)
   let FS = {
     TEAM:1, NAME:2, VIDEO:3, SCORED_BY:4, OFFICIAL_REF:5, AGREE:6, NOTES:7,
     FINAL_SCORE:8, SCORE_NO_FOULS:9, AUTO_SCORE:10, TEL_SCORE:11, FOUL_DED:12,
     MINOR:13, MAJOR:14, G_RULES:15,
-    LEAVE:16, AUTO_CLS:17, AUTO_OVF:18, AUTO_RAMP:19, AUTO_PAT:20,
-    TEL_CLS:21, TEL_OVF:22, TEL_DEPOT:23, TEL_RAMP:24, TEL_PAT:25, BASE:26,
-    EFF_REF: 27
+    LEAVE:16, AUTO_CLS:17, AUTO_OVF:18, AUTO_RAMP:19,
+    TEL_CLS:20, TEL_OVF:21, TEL_DEPOT:22, TEL_RAMP:23, BASE:24
   };
-  let fsLastVisCol = _colLetter(26); // Z
-  let fsEffRef = _colLetter(FS.EFF_REF); // AA
+  let fsLastVisCol = _colLetter(24); // X
 
   // Pre-compute INDIRECT referee range strings (one per referee, reused across all rows)
   let indRefStrs = [];
@@ -1182,7 +1181,7 @@ function _buildFinalScoresSheet(ss) {
     {range: _colLetter(FS.FINAL_SCORE)+"1:"+_colLetter(FS.FOUL_DED)+"1", label: "Total Scores", bg: "#7030A0"},
     {range: _colLetter(FS.MINOR)+"1:"+_colLetter(FS.MAJOR)+"1", label: "Fouls", bg: "#C00000"},
     {range: _colLetter(FS.G_RULES)+"1", label: "G Rules", bg: "#8B6914"},
-    {range: _colLetter(FS.LEAVE)+"1:"+_colLetter(FS.AUTO_PAT)+"1", label: "Autonomous Period", bg: "#548235"},
+    {range: _colLetter(FS.LEAVE)+"1:"+_colLetter(FS.AUTO_RAMP)+"1", label: "Autonomous Period", bg: "#548235"},
     {range: _colLetter(FS.TEL_CLS)+"1:"+_colLetter(FS.BASE)+"1", label: "TeleOp Period", bg: "#C55A11"}
   ];
   for (let g = 0; g < groups.length; g++) {
@@ -1202,17 +1201,15 @@ function _buildFinalScoresSheet(ss) {
   ).setFontStyle("italic").setFontColor("#6B4400").setBackground("#FFF5D6")
    .setHorizontalAlignment("left").setWrap(true);
 
-  let pvRow = new Array(26 - FS.FINAL_SCORE + 1).fill("");
+  let pvRow = new Array(FS.BASE - FS.FINAL_SCORE + 1).fill("");
   pvRow[FS.MINOR - FS.FINAL_SCORE] = "\u00d7(\u2212" + PTS_MINOR_FOUL + ")";
   pvRow[FS.MAJOR - FS.FINAL_SCORE] = "\u00d7(\u2212" + PTS_MAJOR_FOUL + ")";
   pvRow[FS.LEAVE - FS.FINAL_SCORE] = String(PTS_LEAVE);
   pvRow[FS.AUTO_CLS - FS.FINAL_SCORE] = "\u00d7" + PTS_CLASSIFIED;
   pvRow[FS.AUTO_OVF - FS.FINAL_SCORE] = "\u00d7" + PTS_OVERFLOW;
-  pvRow[FS.AUTO_PAT - FS.FINAL_SCORE] = "\u00d7" + PTS_PATTERN + " ea";
   pvRow[FS.TEL_CLS - FS.FINAL_SCORE] = "\u00d7" + PTS_CLASSIFIED;
   pvRow[FS.TEL_OVF - FS.FINAL_SCORE] = "\u00d7" + PTS_OVERFLOW;
   pvRow[FS.TEL_DEPOT - FS.FINAL_SCORE] = "\u00d7" + PTS_DEPOT;
-  pvRow[FS.TEL_PAT - FS.FINAL_SCORE] = "\u00d7" + PTS_PATTERN + " ea";
   pvRow[FS.BASE - FS.FINAL_SCORE] = PTS_BASE_PARTIAL + "/" + PTS_BASE_FULL;
   sheet.getRange(2, FS.FINAL_SCORE, 1, pvRow.length).setValues([pvRow]);
   sheet.getRange(_colLetter(FS.FINAL_SCORE) + "2:" + fsLastVisCol + "2")
@@ -1226,8 +1223,8 @@ function _buildFinalScoresSheet(ss) {
     "Scored By", "Official\nReferee", "Refs\nAgree?", "Notes",
     "Final\nScore", "Score w/o\nFouls", "Auto\nScore", "TeleOp\nScore", "Foul\nDeduction",
     "Minor", "Major", "G Rules",
-    "LEAVE", "Auto\nCLASSIFIED", "Auto\nOVERFLOW", "Auto RAMP\nColors", "Auto\nPATTERN",
-    "Tel\nCLASSIFIED", "Tel\nOVERFLOW", "Tel\nDEPOT", "Tel RAMP\nColors", "Tel\nPATTERN", "BASE"
+    "LEAVE", "Auto\nCLASSIFIED", "Auto\nOVERFLOW", "Auto RAMP\nColors",
+    "Tel\nCLASSIFIED", "Tel\nOVERFLOW", "Tel\nDEPOT", "Tel RAMP\nColors", "BASE"
   ];
   sheet.getRange(3, 1, 1, headers.length).setValues([headers]);
   sheet.getRange("A3:" + fsLastVisCol + "3").setFontWeight("bold").setWrap(true)
@@ -1239,14 +1236,11 @@ function _buildFinalScoresSheet(ss) {
   sheet.getRange(_colLetter(FS.FINAL_SCORE) + "3:" + _colLetter(FS.FOUL_DED) + "3").setBackground("#7030A0");
   sheet.getRange(_colLetter(FS.MINOR) + "3:" + _colLetter(FS.MAJOR) + "3").setBackground("#C00000");
   sheet.getRange(_colLetter(FS.G_RULES) + "3").setBackground("#8B6914");
-  sheet.getRange(_colLetter(FS.LEAVE) + "3:" + _colLetter(FS.AUTO_PAT) + "3").setBackground("#548235");
+  sheet.getRange(_colLetter(FS.LEAVE) + "3:" + _colLetter(FS.AUTO_RAMP) + "3").setBackground("#548235");
   sheet.getRange(_colLetter(FS.TEL_CLS) + "3:" + _colLetter(FS.BASE) + "3").setBackground("#C55A11");
 
-  // Hidden helper column AA header
-  sheet.getRange(3, FS.EFF_REF).setValue("effectiveRef");
-
   // ---- DATA ROWS ----
-  // Mapping: FS column -> RC column for VLOOKUP
+  // Mapping: FS column -> RC column for VLOOKUP (no PATTERN Count — those stay on referee sheets only)
   let vlookupMap = [
     [FS.FINAL_SCORE,   RC.TOTAL],
     [FS.SCORE_NO_FOULS, RC.SCORE_NO_FOULS],
@@ -1260,12 +1254,10 @@ function _buildFinalScoresSheet(ss) {
     [FS.AUTO_CLS,      RC.AUTO_CLS],
     [FS.AUTO_OVF,      RC.AUTO_OVF],
     [FS.AUTO_RAMP,     RC.AUTO_RAMP],
-    [FS.AUTO_PAT,      RC.AUTO_PAT],
     [FS.TEL_CLS,       RC.TEL_CLS],
     [FS.TEL_OVF,       RC.TEL_OVF],
     [FS.TEL_DEPOT,     RC.TEL_DEPOT],
     [FS.TEL_RAMP,      RC.TEL_RAMP],
-    [FS.TEL_PAT,       RC.TEL_PAT],
     [FS.BASE,          RC.BASE]
   ];
 
@@ -1282,8 +1274,7 @@ function _buildFinalScoresSheet(ss) {
   let formulasAD = [];  // A-D
   let formulasF = [];   // F (Agree?)
   let formulasG = [];   // G (Notes)
-  let formulasHZ = [];  // H-Z (scores from effectiveRef)
-  let formulasAA = [];  // AA (effectiveRef helper)
+  let formulasHX = [];  // H-X (scores with inlined effectiveRef via LET)
 
   for (let row = ds; row <= de; row++) {
     // A: Team #
@@ -1301,7 +1292,7 @@ function _buildFinalScoresSheet(ss) {
     let fD = '=IF(A' + row + '="","",IFERROR(TEXTJOIN(CHAR(10),TRUE,' + refNameParts.join(',') + '),""))';
     formulasAD.push([fA, fB, fC, fD]);
 
-    // refCount expression (used in F and AA)
+    // refCount expression (used in F, G, and score columns)
     let refCountParts = [];
     for (let r = 1; r <= NUM_REFEREES; r++) {
       refCountParts.push('IF(' + hasScored(r, row) + ',1,0)');
@@ -1326,37 +1317,37 @@ function _buildFinalScoresSheet(ss) {
       'IF(IFERROR(ROWS(UNIQUE(FILTER({' + concatJoined + '},{' + concatJoined + '}<>"")))=1,TRUE),"Yes","No")),"N/A"))'
     ]);
 
-    // AA: effectiveRef — Official Ref if set, else auto-select if exactly 1 ref scored
+    // effectiveRef expression — inlined via LET in Notes and score formulas
+    // Official Ref if set and valid (MATCH defense-in-depth), else auto-select single ref, else ""
+    let offRefCol = '$' + _colLetter(FS.OFFICIAL_REF) + row;
     let singleRefParts = [];
     for (let r = 1; r <= NUM_REFEREES; r++) {
       singleRefParts.push('IF(' + hasScored(r, row) + ',Config!' + _refConfigCol(r) + '$2,"")');
     }
-    // Validate Official Referee against Config names (defense-in-depth: prevents INDIRECT from
-    // referencing arbitrary sheets even if data validation is bypassed via API)
-    let offRefCol = '$' + _colLetter(FS.OFFICIAL_REF) + row;
-    formulasAA.push([
-      '=IF($A' + row + '="","",IF(AND(' + offRefCol + '<>"",ISNUMBER(MATCH(' + offRefCol + ',Config!$D$2:$I$2,0))),' +
-      offRefCol + ',' +
-      'IF(' + refCountExpr + '=1,TEXTJOIN("",TRUE,' + singleRefParts.join(',') + '),"")))'
-    ]);
+    let effRefExpr = 'IF(AND(' + offRefCol + '<>"",ISNUMBER(MATCH(' + offRefCol + ',Config!$D$2:$I$2,0))),' +
+      offRefCol + ',IF(rc=1,TEXTJOIN("",TRUE,' + singleRefParts.join(',') + '),""))';
 
     // G: Notes — two-mode (effectiveRef set: plain; not set: all refs with "Name: text")
-    let notesEffRef = 'IFERROR(VLOOKUP($A' + row + ',INDIRECT("\'"&$' + fsEffRef + row + '&"\'!$A:$' + _colLetter(24) + '"),' + RC.NOTES + ',FALSE),"")';
+    // Uses LET to compute rc (refCount) and er (effectiveRef) once per cell
+    let notesEffRef = 'IFERROR(VLOOKUP($A' + row + ',INDIRECT("\'"&er&"\'!$A:$' + _colLetter(24) + '"),' + RC.NOTES + ',FALSE),"")';
     let notesAllParts = [];
     for (let r = 1; r <= NUM_REFEREES; r++) {
       let noteVal = 'IFERROR(VLOOKUP($A' + row + ',' + indRef(r) + ',' + RC.NOTES + ',FALSE),"")';
       notesAllParts.push('IF(AND(' + hasScored(r, row) + ',' + noteVal + '<>""),Config!' + _refConfigCol(r) + '$2&": "&' + noteVal + ',"")');
     }
     formulasG.push([
-      '=IF($A' + row + '="","",IF($' + fsEffRef + row + '<>"",' + notesEffRef + ',' +
-      'IFERROR(TEXTJOIN(CHAR(10),TRUE,' + notesAllParts.join(',') + '),"")))'
+      '=IF($A' + row + '="","",LET(rc,' + refCountExpr + ',er,' + effRefExpr + ',' +
+      'IF(er<>"",' + notesEffRef + ',' +
+      'IFERROR(TEXTJOIN(CHAR(10),TRUE,' + notesAllParts.join(',') + '),""))' +
+      '))'
     ]);
 
-    // H-Z: Score columns — per-field agreement with effectiveRef override
-    // When effectiveRef is set (official ref selected or single ref), show that ref's value.
+    // H-X: Score columns — per-field agreement with inlined effectiveRef
+    // Each formula uses LET(rc, ..., er, ..., <body>) to compute effectiveRef once.
+    // When er is set (official ref selected or single ref), show that ref's value.
     // When multiple refs scored and no official ref, show value only if all refs agree;
     // otherwise CHAR(8203) (zero-width space) marks disagreement for CF highlighting.
-    let overrideRef = 'INDIRECT("\'"&$' + fsEffRef + row + '&"\'!$A:$' + _colLetter(24) + '")';
+    let overrideRef = 'INDIRECT("\'"&er&"\'!$A:$' + _colLetter(24) + '")';
     let rowFormulas = [];
 
     // Pre-build per-ref scored booleans for FILTER criteria (reused across all fields)
@@ -1381,19 +1372,18 @@ function _buildFinalScoresSheet(ss) {
         'IF(ROWS(UNIQUE(v))=1,INDEX(v,1),CHAR(8203)))';
 
       rowFormulas.push(
-        '=IF($A' + row + '="","",IF($' + fsEffRef + row + '<>"",' + effRefVal + ',' +
-        'IF(' + refCountExpr + '<2,"",' + agreeCheck + ')))'
+        '=IF($A' + row + '="","",LET(rc,' + refCountExpr + ',er,' + effRefExpr + ',' +
+        'IF(er<>"",' + effRefVal + ',IF(rc<2,"",' + agreeCheck + '))))'
       );
     }
-    formulasHZ.push(rowFormulas);
+    formulasHX.push(rowFormulas);
   }
 
   // Batch write all formulas
   sheet.getRange(ds, 1, MAX_TEAMS, 4).setFormulas(formulasAD);
   sheet.getRange(ds, FS.AGREE, MAX_TEAMS, 1).setFormulas(formulasF);
   sheet.getRange(ds, FS.NOTES, MAX_TEAMS, 1).setFormulas(formulasG);
-  sheet.getRange(ds, FS.FINAL_SCORE, MAX_TEAMS, vlookupMap.length).setFormulas(formulasHZ);
-  sheet.getRange(ds, FS.EFF_REF, MAX_TEAMS, 1).setFormulas(formulasAA);
+  sheet.getRange(ds, FS.FINAL_SCORE, MAX_TEAMS, vlookupMap.length).setFormulas(formulasHX);
 
   // ---- DATA VALIDATION ----
   let configSheet = ss.getSheetByName("Config");
@@ -1418,7 +1408,7 @@ function _buildFinalScoresSheet(ss) {
   sheet.getRange(cFS(FS.SCORE_NO_FOULS) + ds + ":" + cFS(FS.FOUL_DED) + de).setBackground("#F3EDF9");
   sheet.getRange(cFS(FS.MINOR) + ds + ":" + cFS(FS.MAJOR) + de).setBackground("#FCE4EC");
   sheet.getRange(cFS(FS.G_RULES) + ds + ":" + cFS(FS.G_RULES) + de).setBackground("#FFF8E1").setWrap(true);
-  sheet.getRange(cFS(FS.LEAVE) + ds + ":" + cFS(FS.AUTO_PAT) + de).setBackground("#E2EFDA");
+  sheet.getRange(cFS(FS.LEAVE) + ds + ":" + cFS(FS.AUTO_RAMP) + de).setBackground("#E2EFDA");
   sheet.getRange(cFS(FS.TEL_CLS) + ds + ":" + cFS(FS.BASE) + de).setBackground("#FDF2E9");
 
   sheet.getRange("A" + ds + ":" + fsLastVisCol + de).setHorizontalAlignment("center");
@@ -1431,23 +1421,18 @@ function _buildFinalScoresSheet(ss) {
   sheet.getRange("A3:" + fsLastVisCol + de).setBorder(true, true, true, true, true, true,
     "#B4B4B4", SpreadsheetApp.BorderStyle.SOLID);
 
-  // Column widths: A-Z (26 cols)
+  // Column widths: A-X (24 cols, no hidden columns)
   let colWidths = [
     85, 150, 250,                      // A-C: Team#, Name, Video
     150, 115, 85, 200,                 // D-G: ScoredBy, OfficialRef, Agree, Notes
     85, 85, 75, 80, 80,               // H-L: Scores
     65, 65, 80,                        // M-O: Minor, Major, GRules
-    65, 85, 85, 85, 80,               // P-T: LEAVE, AutoCLS, AutoOVF, AutoRAMP, AutoPAT
-    85, 85, 65, 85, 80, 65            // U-Z: TelCLS, TelOVF, TelDEPOT, TelRAMP, TelPAT, BASE
+    65, 85, 85, 85,                    // P-S: LEAVE, AutoCLS, AutoOVF, AutoRAMP
+    85, 85, 65, 85, 65                 // T-X: TelCLS, TelOVF, TelDEPOT, TelRAMP, BASE
   ];
   for (let c = 0; c < colWidths.length; c++) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
   }
-
-  // Hide helper column AA and calculated PATTERN columns
-  sheet.hideColumns(FS.EFF_REF);
-  sheet.hideColumns(FS.AUTO_PAT);
-  sheet.hideColumns(FS.TEL_PAT);
 
   // ---- CONDITIONAL FORMATTING ----
   let rules = [];
@@ -1576,6 +1561,113 @@ function randomizeTeamOrders() {
     "If you re-randomized by mistake, run 'Update Sheets' to realign data.",
     ui.ButtonSet.OK
   );
+}
+
+/**
+ * Reorders the active referee sheet so teams match Config/FinalScores order.
+ * All scoring data moves with its team. Orphaned teams (on sheet but not in Config)
+ * are appended after the Config-ordered teams.
+ */
+function reorderToConfigOrder() {
+  if (!checkAuthorization()) return;
+  let ui;
+  try { ui = SpreadsheetApp.getUi(); } catch(e) { return; }
+
+  let ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getActiveSheet();
+
+  let note = "";
+  try { note = sheet.getRange("A1").getNote() || ""; } catch(e) {}
+  if (!note.startsWith("ref_index:")) {
+    ui.alert("Error", "Navigate to a referee sheet first.\nThis reorders the active sheet's teams to match Config/FinalScores order.", ui.ButtonSet.OK);
+    return;
+  }
+
+  let config = ss.getSheetByName("Config");
+  if (!config) {
+    ui.alert("Error", "Config sheet not found.", ui.ButtonSet.OK);
+    return;
+  }
+
+  let response = ui.alert(
+    "Reorder to Config Order",
+    "This will reorder \"" + sheet.getName() + "\" so teams match Config/FinalScores order.\n\n" +
+    "All scoring data moves with its team \u2014 nothing is lost.\n\nContinue?",
+    ui.ButtonSet.YES_NO
+  );
+  if (response !== ui.Button.YES) return;
+
+  // Input columns to preserve (all user-entered data)
+  let inputCols = [RC.TEAM, RC.NOTES, RC.MINOR, RC.MAJOR, RC.G_RULES,
+                   RC.MOTIF, RC.LEAVE, RC.AUTO_CLS, RC.AUTO_OVF, RC.AUTO_RAMP,
+                   RC.TEL_CLS, RC.TEL_OVF, RC.TEL_DEPOT, RC.TEL_RAMP, RC.BASE];
+
+  // Read all current data
+  let allData = sheet.getRange(REF_DATA_START, 1, MAX_TEAMS, 24).getValues();
+
+  // Build map: team# → input values
+  let teamDataMap = {};
+  for (let i = 0; i < allData.length; i++) {
+    let team = allData[i][0];
+    if (team !== "" && team !== null) {
+      let rowInputs = {};
+      for (let c = 0; c < inputCols.length; c++) {
+        rowInputs[inputCols[c]] = allData[i][inputCols[c] - 1];
+      }
+      teamDataMap[team] = rowInputs;
+    }
+  }
+
+  // Read Config order
+  let configData = config.getRange("A4:A" + (MAX_TEAMS + 3)).getValues();
+  let configOrder = [];
+  for (let i = 0; i < configData.length; i++) {
+    if (configData[i][0] !== "" && configData[i][0] !== null) {
+      configOrder.push(configData[i][0]);
+    }
+  }
+
+  // Build reordered arrays
+  let reordered = {};
+  for (let c = 0; c < inputCols.length; c++) {
+    reordered[inputCols[c]] = new Array(MAX_TEAMS).fill("");
+  }
+
+  let placed = {};
+  let idx = 0;
+
+  // Config teams in Config order
+  for (let i = 0; i < configOrder.length && idx < MAX_TEAMS; i++) {
+    let team = configOrder[i];
+    if (teamDataMap[team]) {
+      for (let c = 0; c < inputCols.length; c++) {
+        reordered[inputCols[c]][idx] = teamDataMap[team][inputCols[c]];
+      }
+    } else {
+      reordered[RC.TEAM][idx] = team;
+    }
+    placed[team] = true;
+    idx++;
+  }
+
+  // Orphaned teams (on sheet but not in Config) appended after
+  for (let i = 0; i < allData.length && idx < MAX_TEAMS; i++) {
+    let team = allData[i][0];
+    if (team !== "" && team !== null && !placed[team]) {
+      for (let c = 0; c < inputCols.length; c++) {
+        reordered[inputCols[c]][idx] = teamDataMap[team][inputCols[c]];
+      }
+      placed[team] = true;
+      idx++;
+    }
+  }
+
+  // Write back each input column
+  for (let c = 0; c < inputCols.length; c++) {
+    _writeColumn(sheet, REF_DATA_START, inputCols[c], reordered[inputCols[c]]);
+  }
+
+  ui.alert("Reorder Complete", "\"" + sheet.getName() + "\" teams now match Config/FinalScores order.\nAll scoring data has been preserved.", ui.ButtonSet.OK);
 }
 
 /**
@@ -1784,13 +1876,6 @@ function applyProtection() {
     rangeProt.addEditor(me);
     _restrictEditors(rangeProt, [meEmail]);
 
-    // Explicit range protection on hidden effectiveRef helper column (belt-and-suspenders;
-    // already locked by sheet-level protection, but this makes the intent explicit and
-    // prevents the INDIRECT trust chain from being tampered with via the unprotected ranges list)
-    let effRefRange = finalSheet.getRange("AA" + FS_DATA_START + ":AA" + FS_DATA_END);
-    let effRefProt = effRefRange.protect().setDescription("FinalScores - effectiveRef Helper");
-    effRefProt.addEditor(me);
-    _restrictEditors(effRefProt, [meEmail]);
   }
 
   // ---- Config ----

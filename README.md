@@ -95,14 +95,13 @@ Aggregation and score breakdown sheet for the head referee. **First tab** in the
 | Q | Auto CLASSIFIED | Per-field agreement or from effective referee |
 | R | Auto OVERFLOW | Per-field agreement or from effective referee |
 | S | Auto RAMP Colors | Per-field agreement or from effective referee |
-| T | Auto PATTERN Count | Per-field agreement or from effective referee (hidden) |
-| U | TeleOp CLASSIFIED | Per-field agreement or from effective referee |
-| V | TeleOp OVERFLOW | Per-field agreement or from effective referee |
-| W | TeleOp DEPOT | Per-field agreement or from effective referee |
-| X | TeleOp RAMP Colors | Per-field agreement or from effective referee |
-| Y | TeleOp PATTERN Count | Per-field agreement or from effective referee (hidden) |
-| Z | BASE | Per-field agreement or from effective referee |
-| AA | effectiveRef | **Hidden** helper column — computes effective referee once per row |
+| T | TeleOp CLASSIFIED | Per-field agreement or from effective referee |
+| U | TeleOp OVERFLOW | Per-field agreement or from effective referee |
+| V | TeleOp DEPOT | Per-field agreement or from effective referee |
+| W | TeleOp RAMP Colors | Per-field agreement or from effective referee |
+| X | BASE | Per-field agreement or from effective referee |
+
+No hidden columns. PATTERN Count columns are on referee sheets only (not shown on FinalScores). The effective referee is computed inline via `LET` in each formula.
 
 Frozen rows: 3 (category headers, point values, column names). Frozen columns: 3 (Team #, Name, Video).
 
@@ -209,8 +208,8 @@ Required fields (12 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Auto
 
 **FinalScores** (applied in priority order):
 1. **Agree column formatting** — green (Yes), red (No), gray (N/A) for Refs Agree? (col F)
-2. **Per-field disagreement red** — individual scoring cells (H-Z) highlighted red when refs disagree on that specific field (cell shows empty). Uses CHAR(8203) zero-width space marker with EXACT() detection. Only active when no Official Referee is selected and 2+ refs scored.
-3. **Yellow row disagreement** — entire row highlighted yellow when Refs Agree? = "No" (lower priority than per-field red, so agreed fields in a disagreement row show yellow, disagreed fields show red)
+2. **Per-field disagreement red** — individual scoring cells (H-X) highlighted red when refs disagree on that specific field (cell shows empty). Uses CHAR(8203) zero-width space marker with EXACT() detection. Only active when no Official Referee is selected and 2+ refs scored.
+3. **Yellow row disagreement** — entire row (A-X) highlighted yellow when Refs Agree? = "No" (lower priority than per-field red, so agreed fields in a disagreement row show yellow, disagreed fields show red)
 4. **Orange missing Official Referee** — col E highlighted when team present but no selection made
 5. **Zebra striping** on even rows
 
@@ -255,7 +254,7 @@ FinalScores uses INDIRECT to reference referee sheets by name from Config:
 ```
 =VLOOKUP($A4, INDIRECT("'"&Config!D$2&"'!$A:$X"), 6, FALSE)
 ```
-This allows sheet tab names to change without breaking formulas. All score VLOOKUPs reference the effectiveRef helper column (AA) to avoid recomputing the effective referee in every formula.
+This allows sheet tab names to change without breaking formulas. Each score formula uses `LET` to compute the effective referee (Official Ref if selected, or auto-selected single ref) inline, then VLOOKUPs that referee's data.
 
 ### Formula: Agreement Check
 Uses `FILTER`/`UNIQUE`/`ROWS` to compare values across all referees who scored a team. Each referee's value is fetched via INDIRECT VLOOKUP. All input columns except G Rules are checked: MOTIF, LEAVE, Auto CLASSIFIED/OVERFLOW/RAMP, TeleOp CLASSIFIED/OVERFLOW/DEPOT/RAMP, BASE, Minor Fouls, and Major Fouls. G Rules are excluded because referees may legitimately cite different rules. Blank fields on scored rows are treated as "(blank)" — distinct from an explicit 0 or any entered value. Text fields are normalized to uppercase for comparison.
@@ -352,6 +351,7 @@ No script action is required — Config VLOOKUPs update the Name and Video colum
 | Menu Item | Function | Description |
 |-----------|----------|-------------|
 | Randomize Team Orders | `randomizeTeamOrders()` | Shuffles teams for each referee, renames sheets, hides unused sheets |
+| Reorder Active Sheet to Config Order | `reorderToConfigOrder()` | Reorders the active referee sheet's teams to match Config/FinalScores order (preserves scores) |
 | Rename Referee Sheets from Config | `renameRefSheets()` | Renames sheet tabs to match Config names, hides unused sheets |
 | Apply Sheet Protection | `applyProtection()` | Sets up sheet/range protections, hides Config and unused sheets |
 | Update Sheets (Non-Destructive) | `updateSheets()` | Rebuilds layouts/formulas preserving scoring data |
