@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Google Apps Script that builds a complete match review scoring system in Google Sheets for FTC DECODE 2025-2026. Designed for 2-6 referees to independently score solo matches (one match per team, no opponents), with automatic score calculation, disagreement detection, and a Final Scores sheet for the head referee.
+A Google Apps Script that builds a complete match review scoring system in Google Sheets for FTC DECODE 2025-2026. Designed for 2-6 referees to independently score solo matches (one match per team, no opponents), with automatic score calculation, disagreement detection, and a Final Scores sheet for the head referee. Supports up to 500 teams (MAX_TEAMS).
 
 The script is parameterized for annual reuse — see [Updating for a New Season](#updating-for-a-new-season).
 
@@ -56,12 +56,12 @@ Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff").
 | O | Auto CLASSIFIED | Whole number | Artifacts through SQUARE to RAMP during AUTO |
 | P | Auto OVERFLOW | Whole number | Artifacts through SQUARE not to RAMP during AUTO |
 | Q | Auto RAMP Colors | Text (G/P chars) | Artifact colors on RAMP at end of AUTO, GATE→SQUARE order |
-| R | Auto PATTERN Count | **Calculated** | Character-by-character match of Q vs REPT(MOTIF,3) |
+| R | Auto PATTERN Count | **Calculated** (hidden) | Character-by-character match of Q vs REPT(MOTIF,3) |
 | S | TeleOp CLASSIFIED | Whole number | Same as O but during TELEOP |
 | T | TeleOp OVERFLOW | Whole number | Same as P but during TELEOP |
 | U | TeleOp DEPOT | Whole number | Artifacts over DEPOT tape at end of TELEOP |
 | V | TeleOp RAMP Colors | Text (G/P chars) | Artifact colors on RAMP at end of TELEOP |
-| W | TeleOp PATTERN Count | **Calculated** | Character-by-character match of V vs REPT(MOTIF,3) |
+| W | TeleOp PATTERN Count | **Calculated** (hidden) | Character-by-character match of V vs REPT(MOTIF,3) |
 | X | BASE | Dropdown (None/Partial/Full) | Robot position on BASE TILE at end of TELEOP |
 
 Frozen rows: 3 (title, points, headers). Frozen columns: 3 (Team #, Team Name, Video).
@@ -83,30 +83,32 @@ Aggregation and score breakdown sheet for the head referee. **First tab** in the
 | E | Official Referee | **Editable dropdown** - select which referee's score to display |
 | F | Refs Agree? | Yes/No/N/A - do all scoring referees agree on every input element? |
 | G | Notes | Two-mode: plain text if Official Ref set; "RefName: text" format otherwise |
-| H | Final Score | From effective referee (TOTAL SCORE) |
-| I | Score w/o Fouls | From effective referee |
-| J | Auto Score | From effective referee |
-| K | TeleOp Score | From effective referee |
-| L | Foul Deduction | From effective referee |
-| M | Minor Fouls | From effective referee |
-| N | Major Fouls | From effective referee |
-| O | G Rules | From effective referee |
-| P | LEAVE | From effective referee |
-| Q | Auto CLASSIFIED | From effective referee |
-| R | Auto OVERFLOW | From effective referee |
-| S | Auto RAMP Colors | From effective referee |
-| T | Auto PATTERN Count | From effective referee |
-| U | TeleOp CLASSIFIED | From effective referee |
-| V | TeleOp OVERFLOW | From effective referee |
-| W | TeleOp DEPOT | From effective referee |
-| X | TeleOp RAMP Colors | From effective referee |
-| Y | TeleOp PATTERN Count | From effective referee |
-| Z | BASE | From effective referee |
+| H | Final Score | Per-field agreement or from effective referee |
+| I | Score w/o Fouls | Per-field agreement or from effective referee |
+| J | Auto Score | Per-field agreement or from effective referee |
+| K | TeleOp Score | Per-field agreement or from effective referee |
+| L | Foul Deduction | Per-field agreement or from effective referee |
+| M | Minor Fouls | Per-field agreement or from effective referee |
+| N | Major Fouls | Per-field agreement or from effective referee |
+| O | G Rules | Per-field agreement or from effective referee |
+| P | LEAVE | Per-field agreement or from effective referee |
+| Q | Auto CLASSIFIED | Per-field agreement or from effective referee |
+| R | Auto OVERFLOW | Per-field agreement or from effective referee |
+| S | Auto RAMP Colors | Per-field agreement or from effective referee |
+| T | Auto PATTERN Count | Per-field agreement or from effective referee (hidden) |
+| U | TeleOp CLASSIFIED | Per-field agreement or from effective referee |
+| V | TeleOp OVERFLOW | Per-field agreement or from effective referee |
+| W | TeleOp DEPOT | Per-field agreement or from effective referee |
+| X | TeleOp RAMP Colors | Per-field agreement or from effective referee |
+| Y | TeleOp PATTERN Count | Per-field agreement or from effective referee (hidden) |
+| Z | BASE | Per-field agreement or from effective referee |
 | AA | effectiveRef | **Hidden** helper column — computes effective referee once per row |
 
 Frozen rows: 3 (category headers, point values, column names). Frozen columns: 3 (Team #, Name, Video).
 
-**Effective referee**: When an Official Referee is selected (col E), that referee's data is shown. When only one referee has scored a team, that referee's data is auto-displayed without needing to select them. When multiple referees have scored but no selection is made, score columns are blank until the head referee picks one.
+**Per-field agreement mode** (no Official Referee selected, 2+ refs scored): Each scoring field (H-Z) independently checks whether all referees agree on that field's value. Agreed values are displayed normally. Disagreed fields show empty with a **red background**, making it easy to identify exactly which fields need attention. The row also gets a yellow background (lower priority than per-field red).
+
+**Effective referee mode** (Official Referee selected or single ref): That referee's data is shown directly for all fields. When only one referee has scored a team, that referee's data is auto-displayed without needing to select them.
 
 ## Scoring Rules (DECODE Section 10.5)
 
@@ -172,7 +174,7 @@ Unauthorized users see an alert and the function exits immediately.
 ### With Referee Emails (Full Isolation)
 - **Sheet-level protection**: All cells locked except designated input ranges
 - **Range-level protection**: Input cells restricted to specific referee + owner
-- Each referee can ONLY edit input columns on their own sheet (D:E, K:M, N:Q, S:V, X)
+- Each referee can ONLY edit input columns on their own sheet (D, J:L, M:Q, S:V, X)
 - FinalScores column E (Override Name selection) restricted to owner only
 - Config restricted to owner only (except team data and referee info)
 - Config sheet hidden after protection is applied (unhide via tab right-click > Unhide)
@@ -207,9 +209,10 @@ Required fields (12 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Auto
 
 **FinalScores** (applied in priority order):
 1. **Agree column formatting** — green (Yes), red (No), gray (N/A) for Refs Agree? (col F)
-2. **Yellow row disagreement** — entire row highlighted yellow when Refs Agree? = "No"
-3. **Orange missing Official Referee** — col E highlighted when no selection made (and multiple refs scored)
-4. **Zebra striping** on even rows
+2. **Per-field disagreement red** — individual scoring cells (H-Z) highlighted red when refs disagree on that specific field (cell shows empty). Uses CHAR(8203) zero-width space marker with EXACT() detection. Only active when no Official Referee is selected and 2+ refs scored.
+3. **Yellow row disagreement** — entire row highlighted yellow when Refs Agree? = "No" (lower priority than per-field red, so agreed fields in a disagreement row show yellow, disagreed fields show red)
+4. **Orange missing Official Referee** — col E highlighted when team present but no selection made
+5. **Zebra striping** on even rows
 
 ## Key Technical Details
 
@@ -219,6 +222,8 @@ The **Update Sheets (Non-Destructive)** menu item (`updateSheets()`) rebuilds al
 - Team orders (column A on referee sheets)
 - All referee scoring inputs (MOTIF, Notes, Minor, Major, G Rules, LEAVE, Auto CLS/OVF/RAMP, Tel CLS/OVF/DEPOT/RAMP, BASE)
 - Official Referee selections (column E on FinalScores)
+- **Auto-appends missing teams**: Any teams in Config that are not already on a referee sheet are appended after the existing teams (no re-randomization needed)
+- **Extends Config**: Validation and formatting are extended to cover the full MAX_TEAMS range
 
 This is used to apply template changes (formulas, formatting, validation) to an existing spreadsheet without losing referee work. Sheet protection is NOT reapplied — run "Apply Sheet Protection" afterward if needed.
 
@@ -239,9 +244,9 @@ The `G_RULES` constant in the script contains the full text of all rules. To upd
 
 ### Formula: PATTERN Match Calculation
 ```
-=IF($A4="","",IF(OR($D4="",$D4="Not Shown"),0,IF(LEN(Q4)=0,0,
-  SUMPRODUCT((MID(UPPER(Q4),SEQUENCE(LEN(Q4)),1)=
-  MID(REPT($D4,3),SEQUENCE(LEN(Q4)),1))*1))))
+=IF($A4="","",IF(OR($M4="",$M4="Not Shown"),0,IF(LEN(Q4)=0,0,
+  SUMPRODUCT((MID(UPPER(Q4),SEQUENCE(MIN(LEN(Q4),9)),1)=
+  MID(REPT($M4,3),SEQUENCE(MIN(LEN(Q4),9)),1))*1))))
 ```
 Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(M4,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions. Returns 0 when MOTIF is blank or "Not Shown".
 
@@ -311,6 +316,36 @@ All formula writes use batch `setFormulas()` and `setValues()` instead of indivi
 - **Referee sheets**: MOTIF, LEAVE, BASE use dropdown lists from configuration constants; numeric fields validated as whole numbers >= 0; RAMP Colors validated against RAMP_REGEX; G Rules uses `requireValueInRange` pointing to a hidden "Rules" sheet (avoids `requireValueInList` character limit) with `setAllowInvalid(true)` for multiselect combined values
 - **FinalScores**: Official Referee dropdown populated from Config referee names range
 - **Rules sheet**: Hidden sheet with all 53 G rule texts in column A, used as the data source for G Rules dropdown validation
+
+## Adding / Removing Teams
+
+### Adding Teams
+1. Open the **Config** sheet (unhide it first if protected: right-click any tab > Unhide > Config)
+2. Enter the new team number, name, and video link in the next empty row of columns A-C (starting at row 4)
+3. Run **DECODE Scoring > Update Sheets (Non-Destructive)**
+
+The update will automatically append the new team(s) to every referee sheet (after any existing teams) and rebuild FinalScores — without disturbing any scoring data already entered. There is no need to re-randomize.
+
+If you want the new teams shuffled into the existing order instead of appended at the end, run **DECODE Scoring > Randomize Team Orders**. This will only work if no scoring data has been entered yet (the script guards against re-randomizing after scoring starts).
+
+### Removing Teams
+Teams cannot be removed through the menu — this is intentional to prevent accidental data loss. To remove a team:
+
+1. Open the **Config** sheet
+2. Delete the team's number, name, and video link from their row in columns A-C (clear the cells, don't delete the row)
+3. On each referee sheet, clear the team number from column A for that team's row (the VLOOKUP-based Name and Video will clear automatically, and all calculated columns will blank out)
+4. Optionally run **Update Sheets (Non-Destructive)** to refresh formulas
+
+The team's row will remain as an empty row on each referee sheet. This is harmless — empty rows are skipped by FinalScores (no Team # = no output). Deleting entire rows from referee sheets is not recommended as it can shift formula ranges.
+
+### Replacing a Team
+To swap one team for another (e.g., a team drops out and a replacement joins):
+
+1. On the **Config** sheet, overwrite the old team's number, name, and video link with the new team's info
+2. On each referee sheet, clear any scoring data in the old team's row (the team number, Name, and Video will update automatically via Config lookup)
+3. Referees can now score the new team in that same row
+
+No script action is required — Config VLOOKUPs update the Name and Video columns on referee sheets automatically.
 
 ## Menu Items
 
