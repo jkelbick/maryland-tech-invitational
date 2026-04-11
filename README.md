@@ -32,7 +32,7 @@ The script is parameterized for annual reuse — see [Updating for a New Season]
 ### Referee Sheets (named by referee)
 Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff"). Sheets are initially named "Referee 1" through "Referee 6" and renamed when Randomize or Rename is run. Unused referee sheets (still named "Referee N") are hidden automatically.
 
-**Row 1**: Title bar (split merge: A1:C1 = progress counter in frozen zone, D1:X1 = title in scrollable zone)
+**Row 1**: Title bar (split merge: A1:C1 = progress counter in frozen zone, D1:V1 = title in scrollable zone)
 **Row 2**: Point values as a quick reference (hidden by default)
 **Row 3**: Column headers (color-coded by section)
 **Row 4+**: Data rows
@@ -42,11 +42,11 @@ Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff").
 | A | Team # | Auto-filled | From randomization |
 | B | Team Name | **Auto (VLOOKUP)** | From Config |
 | C | Video | **Auto (VLOOKUP)** | From Config |
-| D | Notes | Free text | ~200px wide |
+| D | Notes | Free text | ~150px wide |
 | E | TOTAL SCORE | **Calculated** | MAX(0, Score w/o Fouls - Foul Deduction) |
 | F | Score w/o Fouls | **Calculated** | Auto + TeleOp (before foul deduction) |
-| G | Auto Score | **Calculated** | LEAVE(3) + CLS×3 + OVF×1 + PAT×2 |
-| H | TeleOp Score | **Calculated** | CLS×3 + OVF×1 + DEPOT×1 + PAT×2 + BASE(0/5/10) |
+| G | Auto Score | **Calculated** | LEAVE(3) + CLS×3 + OVF×1 + PATTERN×2 (inline) |
+| H | TeleOp Score | **Calculated** | CLS×3 + OVF×1 + DEPOT×1 + PATTERN×2 (inline) + BASE(0/5/10) |
 | I | Foul Deduction | **Calculated** | Minor×5 + Major×15 |
 | J | Minor Fouls | Whole number | |
 | K | Major Fouls | Whole number | |
@@ -56,13 +56,11 @@ Each referee gets an independent sheet named from Config (e.g., "Paul", "Jeff").
 | O | Auto CLASSIFIED | Whole number | Artifacts through SQUARE to RAMP during AUTO |
 | P | Auto OVERFLOW | Whole number | Artifacts through SQUARE not to RAMP during AUTO |
 | Q | Auto RAMP Colors | Text (G/P chars) | Artifact colors on RAMP at end of AUTO, GATE→SQUARE order |
-| R | Auto PATTERN Count | **Calculated** (hidden) | Character-by-character match of Q vs REPT(MOTIF,3) |
-| S | TeleOp CLASSIFIED | Whole number | Same as O but during TELEOP |
-| T | TeleOp OVERFLOW | Whole number | Same as P but during TELEOP |
-| U | TeleOp DEPOT | Whole number | Artifacts over DEPOT tape at end of TELEOP |
-| V | TeleOp RAMP Colors | Text (G/P chars) | Artifact colors on RAMP at end of TELEOP |
-| W | TeleOp PATTERN Count | **Calculated** (hidden) | Character-by-character match of V vs REPT(MOTIF,3) |
-| X | BASE | Dropdown (None/Partial/Full) | Robot position on BASE TILE at end of TELEOP |
+| R | TeleOp CLASSIFIED | Whole number | Same as O but during TELEOP |
+| S | TeleOp OVERFLOW | Whole number | Same as P but during TELEOP |
+| T | TeleOp DEPOT | Whole number | Artifacts over DEPOT tape at end of TELEOP |
+| U | TeleOp RAMP Colors | Text (G/P chars) | Artifact colors on RAMP at end of TELEOP |
+| V | BASE | Dropdown (None/Partial/Full) | Robot position on BASE TILE at end of TELEOP |
 
 Frozen rows: 3 (title, points, headers). Frozen columns: 3 (Team #, Team Name, Video).
 
@@ -101,7 +99,7 @@ Aggregation and score breakdown sheet for the head referee. **First tab** in the
 | W | TeleOp RAMP Colors | Per-field agreement or from effective referee |
 | X | BASE | Per-field agreement or from effective referee |
 
-No hidden columns. PATTERN Count columns are on referee sheets only (not shown on FinalScores). The effective referee is computed inline via `LET` in each formula.
+No hidden columns on any sheet. PATTERN matching is inlined directly into Auto Score and TeleOp Score formulas on referee sheets. The effective referee is computed inline via `LET` in each formula.
 
 Frozen rows: 3 (category headers, point values, column names). Frozen columns: 3 (Team #, Name, Video).
 
@@ -173,7 +171,7 @@ Unauthorized users see an alert and the function exits immediately.
 ### With Referee Emails (Full Isolation)
 - **Sheet-level protection**: All cells locked except designated input ranges
 - **Range-level protection**: Input cells restricted to specific referee + owner
-- Each referee can ONLY edit input columns on their own sheet (D, J:L, M:Q, S:V, X)
+- Each referee can ONLY edit input columns on their own sheet (D, J:L, M:Q, R:U, V)
 - FinalScores column E (Override Name selection) restricted to owner only
 - Config restricted to owner only (except team data and referee info)
 - Config sheet hidden after protection is applied (unhide via tab right-click > Unhide)
@@ -226,7 +224,7 @@ The **Update Sheets (Non-Destructive)** menu item (`updateSheets()`) rebuilds al
 
 This is used to apply template changes (formulas, formatting, validation) to an existing spreadsheet without losing referee work. Sheet protection is NOT reapplied — run "Apply Sheet Protection" afterward if needed.
 
-The function auto-detects the current sheet layout (old 23-column, v2 24-column with MOTIF at D, or current 24-column with MOTIF at M) when reading data to ensure compatibility during template transitions. Old-layout data is mapped to new column positions automatically; the G Rules column will be empty after migration from the original 23-column layout (it didn't exist).
+The function auto-detects the current sheet layout (old 23-column, v2 24-column with MOTIF at D, v3 24-column with MOTIF at M and PATTERN columns, or current 22-column with MOTIF at M and inlined PATTERN) when reading data to ensure compatibility during template transitions. Old-layout data is mapped to new column positions automatically; the G Rules column will be empty after migration from the original 23-column layout (it didn't exist).
 
 ### G Rules Multiselect
 The G Rules column (L on referee sheets, O on FinalScores) allows referees to record which game rules were violated during a match. All 53 rules from the DECODE competition manual (Section 11) are available as dropdown options.
@@ -241,18 +239,19 @@ The G Rules column (L on referee sheets, O on FinalScores) allows referees to re
 
 The `G_RULES` constant in the script contains the full text of all rules. To update for a new season, replace the array contents with the new season's game rules.
 
-### Formula: PATTERN Match Calculation
+### Formula: PATTERN Match Calculation (Inlined)
+The PATTERN match count is computed inline within Auto Score and TeleOp Score formulas. The core expression:
 ```
-=IF($A4="","",IF(OR($M4="",$M4="Not Shown"),0,IF(LEN(Q4)=0,0,
+IF(OR($M4="",$M4="Not Shown"),0,IF(LEN(Q4)=0,0,
   SUMPRODUCT((MID(UPPER(Q4),SEQUENCE(MIN(LEN(Q4),9)),1)=
-  MID(REPT($M4,3),SEQUENCE(MIN(LEN(Q4),9)),1))*1))))
+  MID(REPT($M4,3),SEQUENCE(MIN(LEN(Q4),9)),1))*1)))
 ```
-Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(M4,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions. Returns 0 when MOTIF is blank or "Not Shown".
+Uses `SUMPRODUCT` with `MID`/`SEQUENCE` for character-by-character comparison. `REPT(M4,3)` repeats the 3-char MOTIF to cover all 9 RAMP positions. Returns 0 when MOTIF is blank or "Not Shown". This is inlined directly into the score formulas rather than having separate PATTERN Count columns.
 
 ### Formula: INDIRECT Cross-Sheet References
 FinalScores uses INDIRECT to reference referee sheets by name from Config:
 ```
-=VLOOKUP($A4, INDIRECT("'"&Config!D$2&"'!$A:$X"), 6, FALSE)
+=VLOOKUP($A4, INDIRECT("'"&Config!D$2&"'!$A:$V"), 6, FALSE)
 ```
 This allows sheet tab names to change without breaking formulas. Each score formula uses `LET` to compute the effective referee (Official Ref if selected, or auto-selected single ref) inline, then VLOOKUPs that referee's data.
 
@@ -302,13 +301,13 @@ Referee sheet renaming uses a two-phase approach: first rename all sheets to tem
 After renaming or applying protection, referee sheets that still have default "Referee N" names are automatically hidden. This keeps the tab bar clean when fewer than 6 referees are used. Hidden sheets can be unhidden via tab right-click > Unhide.
 
 ### Merge / Freeze Constraint
-Google Sheets does not allow frozen rows or columns to split a merged cell. All merges are split at frozen boundaries: referee sheet title uses A1:C1 (frozen) + D1:X1 (scrollable); FinalScores row 1 groups naturally align with the 3-column freeze (A1:C1 = "Teams").
+Google Sheets does not allow frozen rows or columns to split a merged cell. All merges are split at frozen boundaries: referee sheet title uses A1:C1 (frozen) + D1:V1 (scrollable); FinalScores row 1 groups naturally align with the 3-column freeze (A1:C1 = "Teams").
 
 ### Sheet Tab Order
 `buildAll()` moves FinalScores to the first tab position after creating all sheets, so the head referee's view is front and center. Tab order: FinalScores, Config, Rules (hidden), Referee 1-6.
 
 ### Batch Operations
-All formula writes use batch `setFormulas()` and `setValues()` instead of individual cell writes for significantly better performance. Referee sheets write formulas in batch groups for non-contiguous calculated columns (F-J, R, W). FinalScores writes columns in batch operations covering A-D, F, G-Z, and the hidden helper column AA.
+All formula writes use batch `setFormulas()` and `setValues()` instead of individual cell writes for significantly better performance. Referee sheets write formulas in three batch calls: col B (Name), col C (Video), and cols E-I (five calculated score columns with inlined PATTERN). FinalScores writes in four batch calls: A-D, F (Agree), G (Notes), and H-X (score columns).
 
 ### Data Validation
 - **Config**: Team numbers validated for uniqueness; referee names validated for uniqueness and restricted to characters safe for sheet names and INDIRECT references (letters, numbers, spaces, hyphens, periods, underscores; no leading spaces)

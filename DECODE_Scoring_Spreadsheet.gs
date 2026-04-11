@@ -68,6 +68,7 @@ const SEASON = "2025-2026";
 // --- General ---
 const NUM_REFEREES = 6;
 const MAX_TEAMS = 500;
+const FORMULA_BUFFER = 50;  // Extra formula rows beyond current team count for headroom
 
 // --- Scoring point values (see competition manual scoring table) ---
 const PTS_LEAVE = 3;
@@ -157,21 +158,21 @@ const REF_DATA_END = MAX_TEAMS + 3;
 const FS_DATA_START = 4;
 const FS_DATA_END = MAX_TEAMS + 3;
 
-// Referee sheet column layout (A-X, 24 columns):
+// Referee sheet column layout (A-V, 22 columns):
 //   A=Team#(auto)  B=Name(auto)  C=Video(auto)
 //   D=Notes
 //   E=TOTAL(calc)  F=Score w/o Fouls(calc)  G=Auto Score(calc)  H=TeleOp Score(calc)  I=Foul Deduction(calc)
 //   J=Minor Fouls  K=Major Fouls  L=G Rules(multiselect)
-//   M=MOTIF  N=LEAVE  O=Auto CLS  P=Auto OVF  Q=Auto RAMP Colors  R=Auto PAT(calc)
-//   S=Tel CLS  T=Tel OVF  U=Tel DEPOT  V=Tel RAMP Colors  W=Tel PAT(calc)
-//   X=BASE
+//   M=MOTIF  N=LEAVE  O=Auto CLS  P=Auto OVF  Q=Auto RAMP Colors
+//   R=Tel CLS  S=Tel OVF  T=Tel DEPOT  U=Tel RAMP Colors
+//   V=BASE
 const RC = {
   TEAM: 1, NAME: 2, VIDEO: 3, NOTES: 4,
   TOTAL: 5, SCORE_NO_FOULS: 6, AUTO_SCORE: 7, TEL_SCORE: 8, FOUL_DED: 9,
   MINOR: 10, MAJOR: 11, G_RULES: 12,
-  MOTIF: 13, LEAVE: 14, AUTO_CLS: 15, AUTO_OVF: 16, AUTO_RAMP: 17, AUTO_PAT: 18,
-  TEL_CLS: 19, TEL_OVF: 20, TEL_DEPOT: 21, TEL_RAMP: 22, TEL_PAT: 23,
-  BASE: 24
+  MOTIF: 13, LEAVE: 14, AUTO_CLS: 15, AUTO_OVF: 16, AUTO_RAMP: 17,
+  TEL_CLS: 18, TEL_OVF: 19, TEL_DEPOT: 20, TEL_RAMP: 21,
+  BASE: 22
 };
 
 // ============================================================
@@ -273,7 +274,12 @@ function _extractColumn(data2D, colIndex0) {
  */
 function _detectLayoutVersion(sheet) {
   let val4 = sheet.getRange(3, 4).getValue().toString().toLowerCase();
-  if (val4.indexOf("notes") !== -1) return "new"; // current: MOTIF at col M, Notes at col D
+  if (val4.indexOf("notes") !== -1) {
+    // Could be v3 (24-col MOTIF@M with PAT columns) or new (22-col without PAT)
+    let val18 = sheet.getRange(3, 18).getValue().toString().toLowerCase();
+    if (val18.indexOf("pat") !== -1) return "v3"; // 24-col MOTIF at M, with Auto PAT / Tel PAT
+    return "new"; // current 22-col: MOTIF at M, no PAT columns
+  }
   let val5 = sheet.getRange(3, 5).getValue().toString().toLowerCase();
   if (val5.indexOf("notes") !== -1) return "v2"; // prior 24-col: MOTIF at col D, Notes at col E
   return "old"; // original 23-col layout
@@ -506,6 +512,14 @@ function updateSheets() {
     TEL_CLS: 19, TEL_OVF: 20, TEL_DEPOT: 21, TEL_RAMP: 22, TEL_PAT: 23,
     BASE: 24
   };
+  let V3_RC = {
+    TEAM: 1, NAME: 2, VIDEO: 3, NOTES: 4,
+    TOTAL: 5, SCORE_NO_FOULS: 6, AUTO_SCORE: 7, TEL_SCORE: 8, FOUL_DED: 9,
+    MINOR: 10, MAJOR: 11, G_RULES: 12,
+    MOTIF: 13, LEAVE: 14, AUTO_CLS: 15, AUTO_OVF: 16, AUTO_RAMP: 17, AUTO_PAT: 18,
+    TEL_CLS: 19, TEL_OVF: 20, TEL_DEPOT: 21, TEL_RAMP: 22, TEL_PAT: 23,
+    BASE: 24
+  };
 
   // --- Save referee scoring data (layout-aware per-field extraction) ---
   let savedRefData = {};
@@ -517,8 +531,8 @@ function updateSheets() {
     let dataStart = _detectRefDataStart(sheet);
     let dataEnd = dataStart + MAX_TEAMS - 1;
     let layoutVer = _detectLayoutVersion(sheet);
-    let src = (layoutVer === "old") ? OLD_RC : (layoutVer === "v2") ? V2_RC : RC;
-    let numCols = (layoutVer === "old") ? 23 : 24;
+    let src = (layoutVer === "old") ? OLD_RC : (layoutVer === "v2") ? V2_RC : (layoutVer === "v3") ? V3_RC : RC;
+    let numCols = (layoutVer === "old") ? 23 : (layoutVer === "v2" || layoutVer === "v3") ? 24 : 22;
 
     let readRows = Math.min(MAX_TEAMS, Math.max(0, sheet.getMaxRows() - dataStart + 1));
     let allData = readRows > 0 ? sheet.getRange(dataStart, 1, readRows, numCols).getValues() : [];
@@ -572,11 +586,30 @@ function updateSheets() {
   // --- Rebuild Rules sheet ---
   _buildRulesSheet(ss);
 
+  // --- Compute formulaRows for optimized rebuild ---
+  // Must cover both Config teams AND any saved referee data (in case Config shrank)
+  let configTeamRange = config.getRange("A4:A" + (MAX_TEAMS + 3)).getValues();
+  let configTeamCount = 0;
+  for (let i = 0; i < configTeamRange.length; i++) {
+    if (configTeamRange[i][0] !== "" && configTeamRange[i][0] !== null) configTeamCount++;
+  }
+  let maxSavedTeamCount = 0;
+  for (let r = 1; r <= NUM_REFEREES; r++) {
+    if (savedRefData[r]) {
+      let cnt = 0;
+      for (let i = 0; i < savedRefData[r].teams.length; i++) {
+        if (savedRefData[r].teams[i] !== "" && savedRefData[r].teams[i] !== null) cnt++;
+      }
+      if (cnt > maxSavedTeamCount) maxSavedTeamCount = cnt;
+    }
+  }
+  let formulaRows = Math.min(MAX_TEAMS, Math.max(configTeamCount, maxSavedTeamCount) + FORMULA_BUFFER);
+
   // --- Rebuild all referee sheets and restore data ---
   // Note: simple triggers (onEdit) do not fire on programmatic setValue() calls,
   // so no guard is needed during data restoration.
   for (let r = 1; r <= NUM_REFEREES; r++) {
-    _buildRefereeSheet(ss, config, r);
+    _buildRefereeSheet(ss, config, r, formulaRows);
 
     if (savedRefData[r]) {
       let sheet = findRefSheet(ss, config, r);
@@ -612,7 +645,7 @@ function updateSheets() {
     .setBorder(true, true, true, true, true, true);
 
   // --- Append missing Config teams to referee sheets ---
-  let configTeamRange = config.getRange("A4:A" + (MAX_TEAMS + 3)).getValues();
+  // Reuse configTeamRange from formula count computation above
   let allConfigTeams = [];
   for (let i = 0; i < configTeamRange.length; i++) {
     if (configTeamRange[i][0] !== "" && configTeamRange[i][0] !== null) {
@@ -652,7 +685,7 @@ function updateSheets() {
   }
 
   // --- Rebuild FinalScores and restore selections ---
-  _buildFinalScoresSheet(ss);
+  _buildFinalScoresSheet(ss, formulaRows);
   if (savedOfficialRefs) {
     fsSheet = ss.getSheetByName("FinalScores");
     if (fsSheet) {
@@ -785,7 +818,7 @@ function _buildRulesSheet(ss) {
 // ============================================================
 // REFEREE SHEET (internal — called by buildAll)
 // ============================================================
-function _buildRefereeSheet(ss, config, refNum) {
+function _buildRefereeSheet(ss, config, refNum, formulaRows) {
   let sheetName = getRefSheetName(config, refNum);
   let oldSheet = ss.getSheetByName(sheetName);
   let sheet = ss.insertSheet(sheetName + (oldSheet ? "_new" : ""));
@@ -800,14 +833,14 @@ function _buildRefereeSheet(ss, config, refNum) {
   let cH = _colLetter(RC.AUTO_SCORE), cI = _colLetter(RC.TEL_SCORE), cJ = _colLetter(RC.FOUL_DED);
   let cK = _colLetter(RC.MINOR), cL = _colLetter(RC.MAJOR), cM = _colLetter(RC.G_RULES);
   let cN = _colLetter(RC.LEAVE), cO = _colLetter(RC.AUTO_CLS), cP = _colLetter(RC.AUTO_OVF);
-  let cQ = _colLetter(RC.AUTO_RAMP), cR = _colLetter(RC.AUTO_PAT);
+  let cQ = _colLetter(RC.AUTO_RAMP);
   let cS = _colLetter(RC.TEL_CLS), cT = _colLetter(RC.TEL_OVF), cU = _colLetter(RC.TEL_DEPOT);
-  let cV = _colLetter(RC.TEL_RAMP), cW = _colLetter(RC.TEL_PAT), cX = _colLetter(RC.BASE);
+  let cV = _colLetter(RC.TEL_RAMP), cX = _colLetter(RC.BASE);
   let ds = REF_DATA_START, de = REF_DATA_END;
   let lastCol = cX; // last column letter
 
   // ---- ROW 1: Title + progress counter (split merge at frozen column boundary) ----
-  // A1:C1 (frozen) = progress counter; D1:X1 (scrollable) = title
+  // A1:C1 (frozen) = progress counter; D1:V1 (scrollable) = title
   sheet.getRange("A1:C1").merge();
   // Composite "scored" check: MOTIF OR LEAVE OR AUTO_CLS non-empty
   // Shows "✓ All N scored" when complete, "Scored: X / Y" otherwise
@@ -826,7 +859,7 @@ function _buildRefereeSheet(ss, config, refNum) {
     .setBackground("#1F4E79").setFontColor("white").setHorizontalAlignment("center");
 
   // ---- ROW 2: Point values (hidden quick reference) ----
-  let pointRow = new Array(24).fill("");
+  let pointRow = new Array(RC.BASE).fill("");
   pointRow[RC.LEAVE - 1] = String(PTS_LEAVE);
   pointRow[RC.AUTO_CLS - 1] = "\u00d7" + PTS_CLASSIFIED;
   pointRow[RC.AUTO_OVF - 1] = "\u00d7" + PTS_OVERFLOW;
@@ -838,23 +871,23 @@ function _buildRefereeSheet(ss, config, refNum) {
   pointRow[RC.BASE - 1] = PTS_BASE_PARTIAL + " / " + PTS_BASE_FULL;
   pointRow[RC.MINOR - 1] = "\u00d7(\u2212" + PTS_MINOR_FOUL + ")";
   pointRow[RC.MAJOR - 1] = "\u00d7(\u2212" + PTS_MAJOR_FOUL + ")";
-  sheet.getRange(2, 1, 1, 24).setValues([pointRow]);
+  sheet.getRange(2, 1, 1, RC.BASE).setValues([pointRow]);
   sheet.getRange("A2:" + lastCol + "2").setFontStyle("italic").setFontSize(10)
     .setHorizontalAlignment("center").setBackground("#E8E8E8").setFontColor("#505050");
   sheet.hideRows(2);
 
   // ---- ROW 3: Column Headers ----
   let headers = [
-    "Team #", "Team Name", "Video",                       // A-C
+    "Team #", "Name", "Video",                             // A-C
     "Notes",                                               // D
-    "TOTAL\nSCORE", "Score w/o\nFouls", "Auto\nScore",    // E-G
-    "TeleOp\nScore", "Foul\nDeduction",                    // H-I
-    "Minor\nFouls", "Major\nFouls", "G Rules",             // J-L
-    "MOTIF", "LEAVE\n(Yes/No)", "Auto\nCLASSIFIED", "Auto\nOVERFLOW", // M-P
-    "Auto RAMP\nColors\n(G/P)", "Auto PATTERN\nCount",     // Q-R
-    "TeleOp\nCLASSIFIED", "TeleOp\nOVERFLOW", "TeleOp\nDEPOT", // S-U
-    "TeleOp RAMP\nColors\n(G/P)", "TeleOp PATTERN\nCount", // V-W
-    "BASE\n(None/Partial/Full)"                             // X
+    "TOTAL", "w/o\nFouls", "Auto\nScore",                  // E-G
+    "Tel\nScore", "Foul\nDed",                              // H-I
+    "Minor", "Major", "G Rules",                            // J-L
+    "MOTIF", "LEAVE", "Auto\nCLASS", "Auto\nOFLOW",        // M-P
+    "Auto\nRAMP",                                           // Q
+    "Tel\nCLASS", "Tel\nOFLOW", "Tel\nDEPOT",              // R-T
+    "Tel\nRAMP",                                            // U
+    "BASE"                                                  // V
   ];
   sheet.getRange(3, 1, 1, headers.length).setValues([headers]);
   sheet.getRange("A3:" + lastCol + "3").setFontWeight("bold").setWrap(true)
@@ -868,51 +901,47 @@ function _buildRefereeSheet(ss, config, refNum) {
   sheet.getRange(cF + "3:" + cJ + "3").setBackground("#2F5496"); // Scores
   sheet.getRange(cK + "3:" + cL + "3").setBackground("#C00000"); // Fouls
   sheet.getRange(cM + "3").setBackground("#8B6914");   // G Rules
-  sheet.getRange(cN + "3:" + cR + "3").setBackground("#548235"); // Auto
+  sheet.getRange(cN + "3:" + cQ + "3").setBackground("#548235"); // Auto
   sheet.getRange(cS + "3:" + lastCol + "3").setBackground("#C55A11"); // TeleOp
 
   // ---- DATA ROWS (batch formula writes) ----
   // Gate: team# only (no MOTIF gate)
-  let formulasB = [], formulasC = [], formulasFJ = [], formulasR = [], formulasW = [];
-  for (let row = ds; row <= de; row++) {
+  let formulaCount = formulaRows || MAX_TEAMS;
+  let fe = ds + formulaCount - 1;
+  let formulasB = [], formulasC = [], formulasFJ = [];
+  for (let row = ds; row <= fe; row++) {
     let gate = '$' + cA + row + '=""';
 
     formulasB.push(['=IF(' + cA + row + '="","",IFERROR(VLOOKUP(' + cA + row + ',Config!$A:$' + _colLetter(3) + ',2,FALSE),""))']);
     formulasC.push(['=IF(' + cA + row + '="","",IFERROR(VLOOKUP(' + cA + row + ',Config!$A:$' + _colLetter(3) + ',3,FALSE),""))']);
 
+    // Inline PATTERN count: SUMPRODUCT/MID/SEQUENCE matching RAMP colors against MOTIF
+    // Returns 0 when MOTIF blank or "Not Shown", 0 when RAMP empty
+    let autoPatInline = 'IF(OR(' + cD + row + '="",' + cD + row + '="Not Shown"),0,' +
+      'IF(LEN(' + cQ + row + ')=0,0,SUMPRODUCT((MID(UPPER(' + cQ + row + '),SEQUENCE(MIN(LEN(' + cQ + row + '),' + RAMP_MAX_CHARS + ')),1)=' +
+      'MID(REPT(' + cD + row + ',3),SEQUENCE(MIN(LEN(' + cQ + row + '),' + RAMP_MAX_CHARS + ')),1))*1)))';
+    let telPatInline = 'IF(OR(' + cD + row + '="",' + cD + row + '="Not Shown"),0,' +
+      'IF(LEN(' + cV + row + ')=0,0,SUMPRODUCT((MID(UPPER(' + cV + row + '),SEQUENCE(MIN(LEN(' + cV + row + '),' + RAMP_MAX_CHARS + ')),1)=' +
+      'MID(REPT(' + cD + row + ',3),SEQUENCE(MIN(LEN(' + cV + row + '),' + RAMP_MAX_CHARS + ')),1))*1)))';
+
     // F: TOTAL = max(0, score - fouls)
     let fF = '=IF(' + gate + ',"",MAX(0,' + cG + row + '-' + cJ + row + '))';
     // G: SCORE_NO_FOULS = Auto + TeleOp
     let fG = '=IF(' + gate + ',"",'+cH + row + '+' + cI + row + ')';
-    // H: AUTO_SCORE = LEAVE + CLS*pts + OVF*pts + PAT*pts
+    // H: AUTO_SCORE = LEAVE + CLS*pts + OVF*pts + PATTERN*pts (inline)
     let fH = '=IF(' + gate + ',"",IF(' + cN + row + '="Yes",' + PTS_LEAVE + ',0)+' +
-      cO + row + '*' + PTS_CLASSIFIED + '+' + cP + row + '*' + PTS_OVERFLOW + '+' + cR + row + '*' + PTS_PATTERN + ')';
-    // I: TEL_SCORE = CLS*pts + OVF*pts + DEPOT*pts + PAT*pts + BASE
+      cO + row + '*' + PTS_CLASSIFIED + '+' + cP + row + '*' + PTS_OVERFLOW + '+' + autoPatInline + '*' + PTS_PATTERN + ')';
+    // I: TEL_SCORE = CLS*pts + OVF*pts + DEPOT*pts + PATTERN*pts (inline) + BASE
     let fI = '=IF(' + gate + ',"",'+cS + row + '*' + PTS_CLASSIFIED + '+' + cT + row + '*' + PTS_OVERFLOW + '+' +
-      cU + row + '*' + PTS_DEPOT + '+' + cW + row + '*' + PTS_PATTERN + '+' +
+      cU + row + '*' + PTS_DEPOT + '+' + telPatInline + '*' + PTS_PATTERN + '+' +
       'IF(' + cX + row + '="Full",' + PTS_BASE_FULL + ',IF(' + cX + row + '="Partial",' + PTS_BASE_PARTIAL + ',0)))';
     // J: FOUL_DED = Minor*pts + Major*pts
     let fJ = '=IF(' + gate + ',"",'+cK + row + '*' + PTS_MINOR_FOUL + '+' + cL + row + '*' + PTS_MAJOR_FOUL + ')';
     formulasFJ.push([fF, fG, fH, fI, fJ]);
-
-    // R: AUTO_PAT — PATTERN count (0 when MOTIF blank or "Not Shown")
-    // MIN(LEN,RAMP_MAX_CHARS) caps comparison length defensively
-    let fR = '=IF(' + gate + ',"",IF(OR(' + cD + row + '="",' + cD + row + '="Not Shown"),0,' +
-      'IF(LEN(' + cQ + row + ')=0,0,SUMPRODUCT((MID(UPPER(' + cQ + row + '),SEQUENCE(MIN(LEN(' + cQ + row + '),' + RAMP_MAX_CHARS + ')),1)=' +
-      'MID(REPT(' + cD + row + ',3),SEQUENCE(MIN(LEN(' + cQ + row + '),' + RAMP_MAX_CHARS + ')),1))*1))))';
-    formulasR.push([fR]);
-
-    // W: TEL_PAT — same logic with TeleOp RAMP colors
-    let fW = '=IF(' + gate + ',"",IF(OR(' + cD + row + '="",' + cD + row + '="Not Shown"),0,' +
-      'IF(LEN(' + cV + row + ')=0,0,SUMPRODUCT((MID(UPPER(' + cV + row + '),SEQUENCE(MIN(LEN(' + cV + row + '),' + RAMP_MAX_CHARS + ')),1)=' +
-      'MID(REPT(' + cD + row + ',3),SEQUENCE(MIN(LEN(' + cV + row + '),' + RAMP_MAX_CHARS + ')),1))*1))))';
-    formulasW.push([fW]);
   }
-  sheet.getRange(ds, RC.NAME, MAX_TEAMS, 1).setFormulas(formulasB);
-  sheet.getRange(ds, RC.VIDEO, MAX_TEAMS, 1).setFormulas(formulasC);
-  sheet.getRange(ds, RC.TOTAL, MAX_TEAMS, 5).setFormulas(formulasFJ);
-  sheet.getRange(ds, RC.AUTO_PAT, MAX_TEAMS, 1).setFormulas(formulasR);
-  sheet.getRange(ds, RC.TEL_PAT, MAX_TEAMS, 1).setFormulas(formulasW);
+  sheet.getRange(ds, RC.NAME, formulaCount, 1).setFormulas(formulasB);
+  sheet.getRange(ds, RC.VIDEO, formulaCount, 1).setFormulas(formulasC);
+  sheet.getRange(ds, RC.TOTAL, formulaCount, 5).setFormulas(formulasFJ);
 
   // ---- DATA VALIDATION ----
   // MOTIF dropdown (including "Not Shown")
@@ -1021,9 +1050,9 @@ function _buildRefereeSheet(ss, config, refNum) {
 
   // Column widths: A=Team#, B=Name, C=Video, D=Notes, E=TOTAL, F=ScoreNoFouls,
   // G=AutoScore, H=TelScore, I=FoulDed, J=Minor, K=Major, L=GRules, M=MOTIF,
-  // N=LEAVE, O=AutoCLS, P=AutoOVF, Q=AutoRAMP, R=AutoPAT, S=TelCLS, T=TelOVF,
-  // U=TelDEPOT, V=TelRAMP, W=TelPAT, X=BASE
-  let colWidths = [85,150,250,200,90,85,80,85,80,75,75,80,80,75,90,90,120,85,100,90,80,120,85,110];
+  // N=LEAVE, O=AutoCLS, P=AutoOVF, Q=AutoRAMP, R=TelCLS, S=TelOVF,
+  // T=TelDEPOT, U=TelRAMP, V=BASE
+  let colWidths = [55,120,200,150,55,55,55,55,50,50,50,55,60,50,55,55,75,55,55,50,75,55];
   for (let c = 0; c < colWidths.length; c++) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
   }
@@ -1031,9 +1060,6 @@ function _buildRefereeSheet(ss, config, refNum) {
   sheet.setFrozenRows(3);
   sheet.setFrozenColumns(3);
 
-  // Hide calculated PATTERN columns (formulas still compute, just not visible)
-  sheet.hideColumns(RC.AUTO_PAT);
-  sheet.hideColumns(RC.TEL_PAT);
 
   // ---- CONDITIONAL FORMATTING ----
   let rules = [];
@@ -1109,15 +1135,42 @@ function _buildRefereeSheet(ss, config, refNum) {
 function onEdit(e) {
   let range = e.range;
   let sheet = range.getSheet();
-  if (range.getColumn() !== RC.G_RULES) return;
-  if (range.getRow() < REF_DATA_START || range.getRow() > REF_DATA_END) return;
+  let col = range.getColumn();
+  let row = range.getRow();
+  if (row < REF_DATA_START || row > REF_DATA_END) return;
   // Only process referee sheets (identified by ref_index note on A1)
   let note = "";
   try { note = sheet.getRange("A1").getNote() || ""; } catch(ex) { return; }
   if (note.indexOf("ref_index:") !== 0) return;
 
+  // --- RAMP auto-uppercase (case-insensitive input) ---
+  if (col === RC.AUTO_RAMP || col === RC.TEL_RAMP) {
+    let val = range.getValue();
+    if (val && typeof val === "string") {
+      let upper = val.toUpperCase();
+      if (upper !== val) range.setValue(upper);
+    }
+    return;
+  }
+
+  // --- G Rules multiselect ---
+  if (col !== RC.G_RULES) return;
+
   let newValue = e.value;
-  if (!newValue) return;
+  if (!newValue) {
+    // Cell cleared — restore dropdown validation from Rules sheet
+    let rulesSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Rules");
+    if (rulesSheet) {
+      range.setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInRange(rulesSheet.getRange("A1:A" + G_RULES.length), true)
+          .setAllowInvalid(true)
+          .setHelpText("Select a G rule from the dropdown. Multiple selections are accumulated as comma-separated codes. To remove a rule, re-open the dropdown and select it again.")
+          .build()
+      );
+    }
+    return;
+  }
 
   // Extract and validate the 4-character rule code against known G_RULES
   let code = newValue.substring(0, 4);
@@ -1138,13 +1191,29 @@ function onEdit(e) {
     codes.push(code); // Add
   }
 
-  range.setValue(codes.join(", "));
+  let result = codes.join(", ");
+  range.clearDataValidation();
+  range.setValue(result);
+
+  // If all codes removed, restore dropdown for next selection
+  if (!result) {
+    let rulesSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Rules");
+    if (rulesSheet) {
+      range.setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInRange(rulesSheet.getRange("A1:A" + G_RULES.length), true)
+          .setAllowInvalid(true)
+          .setHelpText("Select a G rule from the dropdown. Multiple selections are accumulated as comma-separated codes. To remove a rule, re-open the dropdown and select it again.")
+          .build()
+      );
+    }
+  }
 }
 
 // ============================================================
 // FINAL SCORES SHEET (internal — called by buildAll)
 // ============================================================
-function _buildFinalScoresSheet(ss) {
+function _buildFinalScoresSheet(ss, formulaRows) {
   let oldSheet = ss.getSheetByName("FinalScores");
   let sheet = ss.insertSheet("FinalScores" + (oldSheet ? "_new" : ""));
   if (oldSheet) ss.deleteSheet(oldSheet);
@@ -1163,7 +1232,7 @@ function _buildFinalScoresSheet(ss) {
   // Pre-compute INDIRECT referee range strings (one per referee, reused across all rows)
   let indRefStrs = [];
   for (let r = 1; r <= NUM_REFEREES; r++) {
-    indRefStrs[r] = 'INDIRECT("\'"&Config!' + _refConfigCol(r) + '$2&"\'!$A:$' + _colLetter(24) + '")';
+    indRefStrs[r] = 'INDIRECT("\'"&Config!' + _refConfigCol(r) + '$2&"\'!$A:$' + _colLetter(RC.BASE) + '")';
   }
   function indRef(r) { return indRefStrs[r]; }
 
@@ -1219,12 +1288,12 @@ function _buildFinalScoresSheet(ss) {
 
   // ---- ROW 3: Column headers ----
   let headers = [
-    "Number", "Name", "Video",
-    "Scored By", "Official\nReferee", "Refs\nAgree?", "Notes",
-    "Final\nScore", "Score w/o\nFouls", "Auto\nScore", "TeleOp\nScore", "Foul\nDeduction",
+    "Team #", "Name", "Video",
+    "Scored By", "Official\nRef", "Refs\nAgree?", "Notes",
+    "Final\nScore", "w/o\nFouls", "Auto\nScore", "Tel\nScore", "Foul\nDed",
     "Minor", "Major", "G Rules",
-    "LEAVE", "Auto\nCLASSIFIED", "Auto\nOVERFLOW", "Auto RAMP\nColors",
-    "Tel\nCLASSIFIED", "Tel\nOVERFLOW", "Tel\nDEPOT", "Tel RAMP\nColors", "BASE"
+    "LEAVE", "Auto\nCLASS", "Auto\nOFLOW", "Auto\nRAMP",
+    "Tel\nCLASS", "Tel\nOFLOW", "Tel\nDEPOT", "Tel\nRAMP", "BASE"
   ];
   sheet.getRange(3, 1, 1, headers.length).setValues([headers]);
   sheet.getRange("A3:" + fsLastVisCol + "3").setFontWeight("bold").setWrap(true)
@@ -1269,6 +1338,8 @@ function _buildFinalScoresSheet(ss) {
                      RC.MINOR, RC.MAJOR];
 
   let ds = FS_DATA_START, de = FS_DATA_END;
+  let formulaCount = formulaRows || MAX_TEAMS;
+  let fe = ds + formulaCount - 1;
 
   // Build all formulas as arrays
   let formulasAD = [];  // A-D
@@ -1276,7 +1347,7 @@ function _buildFinalScoresSheet(ss) {
   let formulasG = [];   // G (Notes)
   let formulasHX = [];  // H-X (scores with inlined effectiveRef via LET)
 
-  for (let row = ds; row <= de; row++) {
+  for (let row = ds; row <= fe; row++) {
     // A: Team #
     let fA = '=IF(Config!A' + row + '="","",Config!A' + row + ')';
     // B: Name
@@ -1314,7 +1385,7 @@ function _buildFinalScoresSheet(ss) {
     let concatJoined = concatParts.join(';');
     formulasF.push([
       '=IF(OR($A' + row + '="",' + refCountExpr + '=0),"",IFERROR(IF(' + refCountExpr + '=1,"N/A",' +
-      'IF(IFERROR(ROWS(UNIQUE(FILTER({' + concatJoined + '},{' + concatJoined + '}<>"")))=1,TRUE),"Yes","No")),"N/A"))'
+      'LET(cv,{' + concatJoined + '},IF(IFERROR(ROWS(UNIQUE(FILTER(cv,cv<>"")))=1,TRUE),"Yes","No"))),"N/A"))'
     ]);
 
     // effectiveRef expression — inlined via LET in Notes and score formulas
@@ -1329,7 +1400,7 @@ function _buildFinalScoresSheet(ss) {
 
     // G: Notes — two-mode (effectiveRef set: plain; not set: all refs with "Name: text")
     // Uses LET to compute rc (refCount) and er (effectiveRef) once per cell
-    let notesEffRef = 'IFERROR(VLOOKUP($A' + row + ',INDIRECT("\'"&er&"\'!$A:$' + _colLetter(24) + '"),' + RC.NOTES + ',FALSE),"")';
+    let notesEffRef = 'IFERROR(VLOOKUP($A' + row + ',INDIRECT("\'"&er&"\'!$A:$' + _colLetter(RC.BASE) + '"),' + RC.NOTES + ',FALSE),"")';
     let notesAllParts = [];
     for (let r = 1; r <= NUM_REFEREES; r++) {
       let noteVal = 'IFERROR(VLOOKUP($A' + row + ',' + indRef(r) + ',' + RC.NOTES + ',FALSE),"")';
@@ -1347,7 +1418,7 @@ function _buildFinalScoresSheet(ss) {
     // When er is set (official ref selected or single ref), show that ref's value.
     // When multiple refs scored and no official ref, show value only if all refs agree;
     // otherwise CHAR(8203) (zero-width space) marks disagreement for CF highlighting.
-    let overrideRef = 'INDIRECT("\'"&er&"\'!$A:$' + _colLetter(24) + '")';
+    let overrideRef = 'INDIRECT("\'"&er&"\'!$A:$' + _colLetter(RC.BASE) + '")';
     let rowFormulas = [];
 
     // Pre-build per-ref scored booleans for FILTER criteria (reused across all fields)
@@ -1380,10 +1451,10 @@ function _buildFinalScoresSheet(ss) {
   }
 
   // Batch write all formulas
-  sheet.getRange(ds, 1, MAX_TEAMS, 4).setFormulas(formulasAD);
-  sheet.getRange(ds, FS.AGREE, MAX_TEAMS, 1).setFormulas(formulasF);
-  sheet.getRange(ds, FS.NOTES, MAX_TEAMS, 1).setFormulas(formulasG);
-  sheet.getRange(ds, FS.FINAL_SCORE, MAX_TEAMS, vlookupMap.length).setFormulas(formulasHX);
+  sheet.getRange(ds, 1, formulaCount, 4).setFormulas(formulasAD);
+  sheet.getRange(ds, FS.AGREE, formulaCount, 1).setFormulas(formulasF);
+  sheet.getRange(ds, FS.NOTES, formulaCount, 1).setFormulas(formulasG);
+  sheet.getRange(ds, FS.FINAL_SCORE, formulaCount, vlookupMap.length).setFormulas(formulasHX);
 
   // ---- DATA VALIDATION ----
   let configSheet = ss.getSheetByName("Config");
@@ -1423,12 +1494,12 @@ function _buildFinalScoresSheet(ss) {
 
   // Column widths: A-X (24 cols, no hidden columns)
   let colWidths = [
-    85, 150, 250,                      // A-C: Team#, Name, Video
-    150, 115, 85, 200,                 // D-G: ScoredBy, OfficialRef, Agree, Notes
-    85, 85, 75, 80, 80,               // H-L: Scores
-    65, 65, 80,                        // M-O: Minor, Major, GRules
-    65, 85, 85, 85,                    // P-S: LEAVE, AutoCLS, AutoOVF, AutoRAMP
-    85, 85, 65, 85, 65                 // T-X: TelCLS, TelOVF, TelDEPOT, TelRAMP, BASE
+    55, 120, 200,                      // A-C: Team#, Name, Video
+    120, 85, 55, 170,                  // D-G: ScoredBy, OfficialRef, Agree, Notes
+    55, 55, 55, 55, 50,               // H-L: Scores
+    50, 50, 55,                        // M-O: Minor, Major, GRules
+    50, 55, 55, 65,                    // P-S: LEAVE, AutoCLS, AutoOVF, AutoRAMP
+    55, 55, 50, 65, 50                 // T-X: TelCLS, TelOVF, TelDEPOT, TelRAMP, BASE
   ];
   for (let c = 0; c < colWidths.length; c++) {
     sheet.setColumnWidth(c + 1, colWidths[c]);
@@ -1603,7 +1674,7 @@ function reorderToConfigOrder() {
                    RC.TEL_CLS, RC.TEL_OVF, RC.TEL_DEPOT, RC.TEL_RAMP, RC.BASE];
 
   // Read all current data
-  let allData = sheet.getRange(REF_DATA_START, 1, MAX_TEAMS, 24).getValues();
+  let allData = sheet.getRange(REF_DATA_START, 1, MAX_TEAMS, RC.BASE).getValues();
 
   // Build map: team# → input values
   let teamDataMap = {};
@@ -1687,7 +1758,7 @@ function _hasAnyScoringData(ss) {
     let layoutVer = _detectLayoutVersion(refSheet);
     let src = (layoutVer === "old") ? {MOTIF: 4, LEAVE: 5, AUTO_CLS: 6} :
               (layoutVer === "v2") ? {MOTIF: 4, LEAVE: 14, AUTO_CLS: 15} : RC;
-    let numCols = (layoutVer === "old") ? 23 : 24;
+    let numCols = (layoutVer === "old") ? 23 : (layoutVer === "v2" || layoutVer === "v3") ? 24 : RC.BASE;
 
     // Single batch read for all columns (defensive: clamp to actual sheet size)
     let readRows = Math.min(MAX_TEAMS, Math.max(0, refSheet.getMaxRows() - dataStart + 1));
