@@ -259,6 +259,28 @@ function _writeColumn(sheet, startRow, colNum, values1D) {
   sheet.getRange(startRow, colNum, data.length, 1).setValues(data);
 }
 
+/**
+ * Writes multiple contiguous columns in a single API call.
+ * @param {Sheet} sheet
+ * @param {number} startRow - First row to write (1-based)
+ * @param {number} startCol - First column to write (1-based)
+ * @param {Array<Array>} columns - Array of 1D arrays, one per column (must all be same length)
+ */
+function _writeColumns(sheet, startRow, startCol, columns) {
+  if (columns.length === 0) return;
+  let numRows = columns[0].length;
+  let numCols = columns.length;
+  let data = [];
+  for (let i = 0; i < numRows; i++) {
+    let row = [];
+    for (let c = 0; c < numCols; c++) {
+      row.push(columns[c][i]);
+    }
+    data.push(row);
+  }
+  sheet.getRange(startRow, startCol, numRows, numCols).setValues(data);
+}
+
 /** Extracts a 0-indexed column from a 2D values array into a 1D array. */
 function _extractColumn(data2D, colIndex0) {
   let result = [];
@@ -614,21 +636,14 @@ function updateSheets() {
     if (savedRefData[r]) {
       let sheet = findRefSheet(ss, config, r);
       if (sheet) {
-        _writeColumn(sheet, REF_DATA_START, RC.TEAM, savedRefData[r].teams);
-        _writeColumn(sheet, REF_DATA_START, RC.MOTIF, savedRefData[r].motif);
-        _writeColumn(sheet, REF_DATA_START, RC.NOTES, savedRefData[r].notes);
-        _writeColumn(sheet, REF_DATA_START, RC.LEAVE, savedRefData[r].leave);
-        _writeColumn(sheet, REF_DATA_START, RC.AUTO_CLS, savedRefData[r].autoCls);
-        _writeColumn(sheet, REF_DATA_START, RC.AUTO_OVF, savedRefData[r].autoOvf);
-        _writeColumn(sheet, REF_DATA_START, RC.AUTO_RAMP, savedRefData[r].autoRamp);
-        _writeColumn(sheet, REF_DATA_START, RC.TEL_CLS, savedRefData[r].telCls);
-        _writeColumn(sheet, REF_DATA_START, RC.TEL_OVF, savedRefData[r].telOvf);
-        _writeColumn(sheet, REF_DATA_START, RC.TEL_DEPOT, savedRefData[r].telDepot);
-        _writeColumn(sheet, REF_DATA_START, RC.TEL_RAMP, savedRefData[r].telRamp);
-        _writeColumn(sheet, REF_DATA_START, RC.BASE, savedRefData[r].base);
-        _writeColumn(sheet, REF_DATA_START, RC.MINOR, savedRefData[r].minor);
-        _writeColumn(sheet, REF_DATA_START, RC.MAJOR, savedRefData[r].major);
-        _writeColumn(sheet, REF_DATA_START, RC.G_RULES, savedRefData[r].gRules);
+        let d = savedRefData[r];
+        // Batch restore: 6 contiguous group writes instead of 15 individual calls
+        _writeColumn(sheet, REF_DATA_START, RC.TEAM, d.teams);           // col 1
+        _writeColumn(sheet, REF_DATA_START, RC.NOTES, d.notes);          // col 4
+        _writeColumns(sheet, REF_DATA_START, RC.MINOR, [d.minor, d.major, d.gRules]); // cols 10-12
+        _writeColumns(sheet, REF_DATA_START, RC.MOTIF, [d.motif, d.leave, d.autoCls, d.autoOvf, d.autoRamp]); // cols 13-17
+        _writeColumns(sheet, REF_DATA_START, RC.TEL_CLS, [d.telCls, d.telOvf, d.telDepot, d.telRamp]); // cols 18-21
+        _writeColumn(sheet, REF_DATA_START, RC.BASE, d.base);            // col 22
       }
     }
   }
@@ -1021,18 +1036,15 @@ function _buildRefereeSheet(ss, config, refNum, formulaRows) {
     );
   }
 
-  // ---- FORMATTING ----
+  // ---- FORMATTING (merged adjacent same-color ranges to reduce API calls) ----
   sheet.getRange(cA + ds + ":" + cA + de).setBackground("#F2F2F2");
   sheet.getRange("B" + ds + ":C" + de).setBackground("#E8F0FE");
   sheet.getRange(cD + ds + ":" + cD + de).setBackground("#E2D9F3");
   sheet.getRange(cE + ds + ":" + cE + de).setBackground("#FFF2CC");
   sheet.getRange(cF + ds + ":" + cJ + de).setBackground("#D6E4F0");
-  sheet.getRange(cK + ds + ":" + cL + de).setBackground("#FFF2CC");
-  sheet.getRange(cM + ds + ":" + cM + de).setBackground("#FFF2CC");
-  sheet.getRange(cN + ds + ":" + cP + de).setBackground("#E2EFDA");
-  sheet.getRange(cQ + ds + ":" + cQ + de).setBackground("#E2EFDA");
-  sheet.getRange(cS + ds + ":" + cU + de).setBackground("#FDF2E9");
-  sheet.getRange(cV + ds + ":" + cV + de).setBackground("#FDF2E9");
+  sheet.getRange(cK + ds + ":" + cM + de).setBackground("#FFF2CC");     // K-L-M all #FFF2CC
+  sheet.getRange(cN + ds + ":" + cQ + de).setBackground("#E2EFDA");     // N-P-Q all #E2EFDA
+  sheet.getRange(cS + ds + ":" + cV + de).setBackground("#FDF2E9");     // S-U-V all #FDF2E9
   sheet.getRange(cX + ds + ":" + cX + de).setBackground("#FFF2CC");
 
   sheet.getRange(cF + ds + ":" + cF + de).setFontWeight("bold").setFontSize(11);
@@ -1040,8 +1052,7 @@ function _buildRefereeSheet(ss, config, refNum, formulaRows) {
   sheet.getRange(cV + ds + ":" + cV + de).setFontFamily("Courier New").setFontWeight("bold");
 
   sheet.getRange(cA + ds + ":" + lastCol + de).setHorizontalAlignment("center");
-  sheet.getRange("B" + ds + ":B" + de).setHorizontalAlignment("left");
-  sheet.getRange("C" + ds + ":C" + de).setHorizontalAlignment("left");
+  sheet.getRange("B" + ds + ":C" + de).setHorizontalAlignment("left");
   sheet.getRange(cE + ds + ":" + cE + de).setHorizontalAlignment("left");
   sheet.getRange(cM + ds + ":" + cM + de).setHorizontalAlignment("left").setWrap(true);
 
@@ -1194,6 +1205,8 @@ function onEdit(e) {
   let result = codes.join(", ");
   range.clearDataValidation();
   range.setValue(result);
+  // Shrink column back to intended width after dropdown expanded it
+  sheet.setColumnWidth(RC.G_RULES, 55);
 
   // If all codes removed, restore dropdown for next selection
   if (!result) {
@@ -1334,8 +1347,6 @@ function _buildFinalScoresSheet(ss, formulaRows) {
   let elemCols = [RC.MOTIF, RC.LEAVE, RC.AUTO_CLS, RC.AUTO_OVF, RC.AUTO_RAMP,
                   RC.TEL_CLS, RC.TEL_OVF, RC.TEL_DEPOT, RC.TEL_RAMP, RC.BASE,
                   RC.MINOR, RC.MAJOR];
-  let numericCols = [RC.AUTO_CLS, RC.AUTO_OVF, RC.TEL_CLS, RC.TEL_OVF, RC.TEL_DEPOT,
-                     RC.MINOR, RC.MAJOR];
 
   let ds = FS_DATA_START, de = FS_DATA_END;
   let formulaCount = formulaRows || MAX_TEAMS;
@@ -1483,8 +1494,7 @@ function _buildFinalScoresSheet(ss, formulaRows) {
   sheet.getRange(cFS(FS.TEL_CLS) + ds + ":" + cFS(FS.BASE) + de).setBackground("#FDF2E9");
 
   sheet.getRange("A" + ds + ":" + fsLastVisCol + de).setHorizontalAlignment("center");
-  sheet.getRange("B" + ds + ":B" + de).setHorizontalAlignment("left");
-  sheet.getRange("C" + ds + ":C" + de).setHorizontalAlignment("left");
+  sheet.getRange("B" + ds + ":C" + de).setHorizontalAlignment("left");
   sheet.getRange(cFS(FS.SCORED_BY) + ds + ":" + cFS(FS.SCORED_BY) + de).setHorizontalAlignment("left").setWrap(true);
   sheet.getRange(cFS(FS.NOTES) + ds + ":" + cFS(FS.NOTES) + de).setHorizontalAlignment("left");
   sheet.getRange(cFS(FS.G_RULES) + ds + ":" + cFS(FS.G_RULES) + de).setHorizontalAlignment("left");
@@ -1885,10 +1895,8 @@ function applyProtection() {
   }
 
   let failedEmails = [];
-  let cD = _colLetter(RC.MOTIF), cE = _colLetter(RC.NOTES);
-  let cK = _colLetter(RC.MINOR), cM = _colLetter(RC.G_RULES);
-  let cN = _colLetter(RC.LEAVE), cQ = _colLetter(RC.AUTO_RAMP);
-  let cS = _colLetter(RC.TEL_CLS), cV = _colLetter(RC.TEL_RAMP);
+  let cE = _colLetter(RC.NOTES);
+  let cK = _colLetter(RC.MINOR);
   let cX = _colLetter(RC.BASE);
 
   // ---- Referee sheets ----
@@ -1904,19 +1912,16 @@ function applyProtection() {
     sheetProt.addEditor(me);
     _restrictEditors(sheetProt, [meEmail]);
 
-    // Non-contiguous input ranges (5 blocks)
-    let inputRange1 = sheet.getRange(cE + REF_DATA_START + ":" + cE + REF_DATA_END);  // Notes
-    let inputRange2 = sheet.getRange(cK + REF_DATA_START + ":" + cM + REF_DATA_END);  // Minor, Major, G Rules
-    let inputRange3 = sheet.getRange(cD + REF_DATA_START + ":" + cQ + REF_DATA_END);  // MOTIF, LEAVE, Auto CLS/OVF/RAMP
-    let inputRange4 = sheet.getRange(cS + REF_DATA_START + ":" + cV + REF_DATA_END);  // Tel CLS/OVF/DEPOT/RAMP
-    let inputRange5 = sheet.getRange(cX + REF_DATA_START + ":" + cX + REF_DATA_END);  // BASE
-    sheetProt.setUnprotectedRanges([inputRange1, inputRange2, inputRange3, inputRange4, inputRange5]);
+    // Input ranges: Notes (D) and all scoring inputs (J:V are contiguous)
+    let inputRange1 = sheet.getRange(cE + REF_DATA_START + ":" + cE + REF_DATA_END);  // Notes (col D)
+    let inputRange2 = sheet.getRange(cK + REF_DATA_START + ":" + cX + REF_DATA_END);  // Minor..BASE (cols J-V)
+    sheetProt.setUnprotectedRanges([inputRange1, inputRange2]);
 
     if (hasEmails && refEmails[r - 1] !== "" && refEmails[r - 1].indexOf("@") !== -1) {
       let refEmail = refEmails[r - 1];
 
-      let inputRanges = [inputRange1, inputRange2, inputRange3, inputRange4, inputRange5];
-      let rangeNames = ["Scoring 1", "Scoring 2", "Scoring 3", "Scoring 4", "Scoring 5"];
+      let inputRanges = [inputRange1, inputRange2];
+      let rangeNames = ["Notes", "Scoring"];
       for (let ri = 0; ri < inputRanges.length; ri++) {
         let rangeProt = inputRanges[ri].protect().setDescription(sheet.getName() + " " + rangeNames[ri]);
         rangeProt.addEditor(me);

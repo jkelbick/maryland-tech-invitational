@@ -171,7 +171,7 @@ Unauthorized users see an alert and the function exits immediately.
 ### With Referee Emails (Full Isolation)
 - **Sheet-level protection**: All cells locked except designated input ranges
 - **Range-level protection**: Input cells restricted to specific referee + owner
-- Each referee can ONLY edit input columns on their own sheet (D, J:L, M:Q, R:U, V)
+- Each referee can ONLY edit input columns on their own sheet (D and J:V)
 - FinalScores column E (Override Name selection) restricted to owner only
 - Config restricted to owner only (except team data and referee info)
 - Config sheet hidden after protection is applied (unhide via tab right-click > Unhide)
