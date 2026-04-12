@@ -103,7 +103,7 @@ No hidden columns on any sheet. PATTERN matching is inlined directly into Auto S
 
 Frozen rows: 3 (category headers, point values, column names). Frozen columns: 3 (Team #, Name, Video).
 
-**Per-field agreement mode** (no Official Referee selected, 2+ refs scored): Each scoring field (H-X) independently checks whether all referees agree on that field's value. Agreed values are displayed normally. Disagreed fields show empty with a **red background**, making it easy to identify exactly which fields need attention. The row also gets a yellow background (lower priority than per-field red).
+**Per-field agreement mode** (no Official Referee selected, 2+ refs scored): Each scoring field (H-X) independently checks whether all referees agree on that field's value. Agreed values are displayed normally. Disagreed fields show each referee's value (e.g., "RefA: 5\nRefB: 3") on a **red background**, making it easy to see exactly where referees disagree and what each entered.
 
 **Effective referee mode** (Official Referee selected or single ref): That referee's data is shown directly for all fields. When only one referee has scored a team, that referee's data is auto-displayed without needing to select them.
 
@@ -206,10 +206,9 @@ Required fields (12 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Auto
 
 **FinalScores** (applied in priority order):
 1. **Agree column formatting** — green (Yes), red (No), gray (N/A) for Refs Agree? (col F)
-2. **Per-field disagreement red** — individual scoring cells (H-X) highlighted red when refs disagree on that specific field (cell shows empty). Uses CHAR(8203) zero-width space marker with EXACT() detection. Only active when no Official Referee is selected and 2+ refs scored.
-3. **Yellow row disagreement** — entire row (A-X) highlighted yellow when Refs Agree? = "No" (lower priority than per-field red, so agreed fields in a disagreement row show yellow, disagreed fields show red)
-4. **Orange missing Official Referee** — col E highlighted when team present but no selection made
-5. **Zebra striping** on even rows
+2. **Per-field disagreement red** — individual scoring cells (H-X) highlighted red when refs disagree on that specific field. Cell displays each referee's value (e.g., "RefA: 5\nRefB: 3") with text wrapping. Uses CHAR(8203) zero-width space prefix with LEFT() detection. Only active when no Official Referee is selected and 2+ refs scored.
+3. **Orange missing Official Referee** — col E highlighted when team present but no selection made
+4. **Zebra striping** on even rows
 
 ## Key Technical Details
 
