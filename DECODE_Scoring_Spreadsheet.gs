@@ -503,7 +503,9 @@ function updateSheets() {
     "Update All Sheets",
     "This updates all sheet layouts, formulas, formatting, and validation " +
     "to the current template without erasing scoring data.\n\n" +
-    "Preserved: team orders, referee scoring inputs, Official Referee selections.\n" +
+    "Sheets are updated in-place (not deleted and recreated).\n" +
+    "Active users may see brief formatting changes during the update.\n\n" +
+    "Preserved: team orders, referee scoring inputs, Official Referee selections, sheet protections.\n" +
     "Updated: formulas, formatting, validation, headers, conditional formatting.\n\n" +
     "Continue?",
     ui.ButtonSet.YES_NO
@@ -586,26 +588,9 @@ function updateSheets() {
     savedOfficialRefs = fsSheet.getRange("E" + FS_DATA_START + ":E" + FS_DATA_END).getValues();
   }
 
-  // --- Create temp sheet to avoid last-sheet deletion errors ---
-  let temp = ss.getSheetByName("_temp_update") || ss.insertSheet("_temp_update");
-
-  // --- Delete old referee sheets ---
-  for (let r = 1; r <= NUM_REFEREES; r++) {
-    let sheet = findRefSheet(ss, config, r);
-    if (sheet) {
-      try { ss.deleteSheet(sheet); } catch(e) {
-        Logger.log("Could not delete sheet for referee " + r + ": " + e);
-      }
-    }
-  }
-
-  // --- Delete old FinalScores and Rules ---
-  fsSheet = ss.getSheetByName("FinalScores");
-  if (fsSheet) { try { ss.deleteSheet(fsSheet); } catch(e) {} }
+  // --- Delete and rebuild Rules sheet (hidden, no user data) ---
   let rulesSheet = ss.getSheetByName("Rules");
   if (rulesSheet) { try { ss.deleteSheet(rulesSheet); } catch(e) {} }
-
-  // --- Rebuild Rules sheet ---
   _buildRulesSheet(ss);
 
   // --- Compute formulaRows for optimized rebuild ---
@@ -627,14 +612,15 @@ function updateSheets() {
   }
   let formulaRows = Math.min(MAX_TEAMS, Math.max(configTeamCount, maxSavedTeamCount) + FORMULA_BUFFER);
 
-  // --- Rebuild all referee sheets and restore data ---
+  // --- Update all referee sheets in-place and restore data ---
   // Note: simple triggers (onEdit) do not fire on programmatic setValue() calls,
   // so no guard is needed during data restoration.
   for (let r = 1; r <= NUM_REFEREES; r++) {
-    _buildRefereeSheet(ss, config, r, formulaRows);
+    let existingRefSheet = findRefSheet(ss, config, r, noteMap);
+    _buildRefereeSheet(ss, config, r, formulaRows, existingRefSheet || null);
 
     if (savedRefData[r]) {
-      let sheet = findRefSheet(ss, config, r);
+      let sheet = existingRefSheet || findRefSheet(ss, config, r);
       if (sheet) {
         let d = savedRefData[r];
         // Batch restore: 6 contiguous group writes instead of 15 individual calls
@@ -699,10 +685,11 @@ function updateSheets() {
     }
   }
 
-  // --- Rebuild FinalScores and restore selections ---
-  _buildFinalScoresSheet(ss, formulaRows);
+  // --- Update FinalScores in-place and restore selections ---
+  let existingFS = ss.getSheetByName("FinalScores");
+  _buildFinalScoresSheet(ss, formulaRows, existingFS || null);
   if (savedOfficialRefs) {
-    fsSheet = ss.getSheetByName("FinalScores");
+    fsSheet = existingFS || ss.getSheetByName("FinalScores");
     if (fsSheet) {
       // Restore only the rows that existed in the old FinalScores
       let restoreRows = Math.min(savedOfficialRefs.length, MAX_TEAMS);
@@ -713,7 +700,7 @@ function updateSheets() {
     }
   }
 
-  // Move FinalScores to first tab
+  // Ensure FinalScores is first tab
   fsSheet = ss.getSheetByName("FinalScores");
   if (fsSheet) {
     ss.setActiveSheet(fsSheet);
@@ -723,19 +710,15 @@ function updateSheets() {
   // Hide unnamed referee sheets
   _hideUnnamedRefSheets(ss, config);
 
-  // Clean up temp sheet
-  try { ss.deleteSheet(temp); } catch(e) {}
-
   if (config) config.activate();
   SpreadsheetApp.flush();
 
   let addedMsg = teamsAdded > 0 ? "\n\n" + teamsAdded + " missing team(s) from Config were appended to each referee sheet." : "";
   ui.alert(
     "Update Complete",
-    "All sheets updated to the latest template.\n" +
-    "Referee scoring data and Official Referee selections have been preserved." + addedMsg + "\n\n" +
-    "Note: Sheet protection has NOT been reapplied.\n" +
-    "Run '" + GAME_NAME + " Scoring > Apply Sheet Protection' if needed.",
+    "All sheets updated to the latest template in-place.\n" +
+    "Referee scoring data, Official Referee selections, and sheet protections have been preserved." + addedMsg + "\n\n" +
+    "Note: If referee emails were changed, re-run '" + GAME_NAME + " Scoring > Apply Sheet Protection' to update access.",
     ui.ButtonSet.OK
   );
 }
@@ -833,12 +816,57 @@ function _buildRulesSheet(ss) {
 // ============================================================
 // REFEREE SHEET (internal — called by buildAll)
 // ============================================================
-function _buildRefereeSheet(ss, config, refNum, formulaRows) {
+function _buildRefereeSheet(ss, config, refNum, formulaRows, existingSheet) {
   let sheetName = getRefSheetName(config, refNum);
-  let oldSheet = ss.getSheetByName(sheetName);
-  let sheet = ss.insertSheet(sheetName + (oldSheet ? "_new" : ""));
-  if (oldSheet) ss.deleteSheet(oldSheet);
-  sheet.setName(sheetName);
+  let sheet;
+
+  if (existingSheet) {
+    // In-place update mode: reuse existing sheet
+    sheet = existingSheet;
+
+    // Rename if Config name changed (two-phase to avoid conflicts)
+    if (sheet.getName() !== sheetName) {
+      try {
+        sheet.setName("_temp_rename_" + refNum);
+        sheet.setName(sheetName);
+      } catch(e) {
+        Logger.log("Failed to rename referee " + refNum + " sheet: " + e);
+      }
+    }
+
+    // Un-merge header rows before re-merging
+    sheet.getRange("A1:" + _colLetter(RC.BASE) + "1").breakApart();
+
+    // Clear old conditional formatting (rebuilt at end of function)
+    sheet.setConditionalFormatRules([]);
+
+    // Clear stale columns beyond current layout
+    let maxCols = sheet.getMaxColumns();
+    if (maxCols > RC.BASE) {
+      sheet.getRange(1, RC.BASE + 1, sheet.getMaxRows(), maxCols - RC.BASE)
+        .clearContent().clearFormat().clearDataValidations();
+    }
+
+    // Clear stale formula rows beyond new formulaRows boundary (calculated cols B-C, E-I)
+    let formulaCount = formulaRows || MAX_TEAMS;
+    let fe = REF_DATA_START + formulaCount;
+    let maxRows = sheet.getMaxRows();
+    if (fe <= maxRows) {
+      let clearRows = maxRows - fe + 1;
+      // Clear NAME, VIDEO (cols 2-3) and TOTAL through FOUL_DED (cols 5-9)
+      sheet.getRange(fe, 2, clearRows, 2).clearContent();
+      sheet.getRange(fe, RC.TOTAL, clearRows, 5).clearContent();
+    }
+
+    // Ensure row 2 is visible (will be re-hidden below)
+    sheet.showRows(2);
+  } else {
+    // Create-new mode (used by buildAll and when sheet doesn't exist)
+    let oldSheet = ss.getSheetByName(sheetName);
+    sheet = ss.insertSheet(sheetName + (oldSheet ? "_new" : ""));
+    if (oldSheet) ss.deleteSheet(oldSheet);
+    sheet.setName(sheetName);
+  }
 
   sheet.getRange("A1").setNote("ref_index:" + refNum);
 
@@ -1203,7 +1231,7 @@ function onEdit(e) {
   }
 
   let result = codes.join(", ");
-  range.clearDataValidation();
+  range.clearDataValidations();
   range.setValue(result);
 
   // If all codes removed, restore dropdown for next selection
@@ -1224,11 +1252,44 @@ function onEdit(e) {
 // ============================================================
 // FINAL SCORES SHEET (internal — called by buildAll)
 // ============================================================
-function _buildFinalScoresSheet(ss, formulaRows) {
-  let oldSheet = ss.getSheetByName("FinalScores");
-  let sheet = ss.insertSheet("FinalScores" + (oldSheet ? "_new" : ""));
-  if (oldSheet) ss.deleteSheet(oldSheet);
-  sheet.setName("FinalScores");
+function _buildFinalScoresSheet(ss, formulaRows, existingSheet) {
+  let sheet;
+
+  if (existingSheet) {
+    // In-place update mode: reuse existing sheet
+    sheet = existingSheet;
+
+    // Un-merge header rows before re-merging
+    sheet.getRange("A1:X1").breakApart();
+    sheet.getRange("A2:X2").breakApart();
+
+    // Clear old conditional formatting (rebuilt at end of function)
+    sheet.setConditionalFormatRules([]);
+
+    // Clear stale columns beyond current 24-column layout
+    let maxCols = sheet.getMaxColumns();
+    if (maxCols > 24) {
+      sheet.getRange(1, 25, sheet.getMaxRows(), maxCols - 24)
+        .clearContent().clearFormat().clearDataValidations();
+    }
+
+    // Clear stale formula rows beyond new formulaRows boundary
+    let formulaCount = formulaRows || MAX_TEAMS;
+    let fe = FS_DATA_START + formulaCount;
+    let maxRows = sheet.getMaxRows();
+    if (fe <= maxRows) {
+      sheet.getRange(fe, 1, maxRows - fe + 1, 24).clearContent();
+    }
+
+    // Ensure row 2 is visible (will be re-hidden below)
+    sheet.showRows(2);
+  } else {
+    // Create-new mode (used by buildAll and when sheet doesn't exist)
+    let oldSheet = ss.getSheetByName("FinalScores");
+    sheet = ss.insertSheet("FinalScores" + (oldSheet ? "_new" : ""));
+    if (oldSheet) ss.deleteSheet(oldSheet);
+    sheet.setName("FinalScores");
+  }
 
   // FinalScores column constants (24 cols, A-X, no hidden columns)
   let FS = {
@@ -1746,10 +1807,13 @@ function reorderToConfigOrder() {
     }
   }
 
-  // Write back each input column
-  for (let c = 0; c < inputCols.length; c++) {
-    _writeColumn(sheet, REF_DATA_START, inputCols[c], reordered[inputCols[c]]);
-  }
+  // Write back input columns (batched by contiguous groups to reduce API calls)
+  _writeColumn(sheet, REF_DATA_START, RC.TEAM, reordered[RC.TEAM]);
+  _writeColumn(sheet, REF_DATA_START, RC.NOTES, reordered[RC.NOTES]);
+  _writeColumns(sheet, REF_DATA_START, RC.MINOR, [reordered[RC.MINOR], reordered[RC.MAJOR], reordered[RC.G_RULES]]);
+  _writeColumns(sheet, REF_DATA_START, RC.MOTIF, [reordered[RC.MOTIF], reordered[RC.LEAVE], reordered[RC.AUTO_CLS], reordered[RC.AUTO_OVF], reordered[RC.AUTO_RAMP]]);
+  _writeColumns(sheet, REF_DATA_START, RC.TEL_CLS, [reordered[RC.TEL_CLS], reordered[RC.TEL_OVF], reordered[RC.TEL_DEPOT], reordered[RC.TEL_RAMP]]);
+  _writeColumn(sheet, REF_DATA_START, RC.BASE, reordered[RC.BASE]);
 
   ui.alert("Reorder Complete", "\"" + sheet.getName() + "\" teams now match Config/FinalScores order.\nAll scoring data has been preserved.", ui.ButtonSet.OK);
 }

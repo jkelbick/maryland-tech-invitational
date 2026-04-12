@@ -67,7 +67,7 @@ Frozen rows: 3 (title, points, headers). Frozen columns: 3 (Team #, Team Name, V
 ### FinalScores Sheet
 Aggregation and score breakdown sheet for the head referee. **First tab** in the spreadsheet. Uses a 3-row header matching last year's layout.
 
-**Row 1**: Merged category group headers (Teams | Referee | Scores | Fouls | G Rules | Autonomous Period | TeleOp Period)
+**Row 1**: Merged category group headers (Teams | Referee | Total Scores | Fouls | G Rules | Autonomous Period | TeleOp Period)
 **Row 2**: Point values per scoring element (hidden by default)
 **Row 3**: Column names
 **Row 4+**: Data
@@ -158,7 +158,7 @@ The script is designed for annual reuse. All game-specific values are in the **G
 10. **FinalScores mapping** — In `_buildFinalScoresSheet()`, update `vlookupMap`, `elemCols`, `headers`, and category groups
 11. **Help text** — In the DATA VALIDATION section, update the text shown on invalid input
 12. **Documentation** — Update this README and the Scoring Guide
-12. Run `buildAll()` to generate all sheets from scratch
+13. Run `buildAll()` to generate all sheets from scratch
 
 ## Authorization
 
@@ -172,7 +172,7 @@ Unauthorized users see an alert and the function exits immediately.
 - **Sheet-level protection**: All cells locked except designated input ranges
 - **Range-level protection**: Input cells restricted to specific referee + owner
 - Each referee can ONLY edit input columns on their own sheet (D and J:V)
-- FinalScores column E (Override Name selection) restricted to owner only
+- FinalScores column E (Official Referee selection) restricted to owner only
 - Config restricted to owner only (except team data and referee info)
 - Config sheet hidden after protection is applied (unhide via tab right-click > Unhide)
 - Unused referee sheets hidden automatically
@@ -214,14 +214,15 @@ Required fields (12 total): MOTIF, Minor, Major, LEAVE, Auto CLS, Auto OVF, Auto
 
 ### Non-Destructive Update
 
-The **Update Sheets (Non-Destructive)** menu item (`updateSheets()`) rebuilds all referee sheets and FinalScores with the current template while preserving:
+The **Update Sheets (Non-Destructive)** menu item (`updateSheets()`) updates all referee sheets and FinalScores **in-place** with the current template while preserving:
 - Team orders (column A on referee sheets)
 - All referee scoring inputs (MOTIF, Notes, Minor, Major, G Rules, LEAVE, Auto CLS/OVF/RAMP, Tel CLS/OVF/DEPOT/RAMP, BASE)
 - Official Referee selections (column E on FinalScores)
+- **Sheet protections** — existing protections survive because sheets are not deleted
 - **Auto-appends missing teams**: Any teams in Config that are not already on a referee sheet are appended after the existing teams (no re-randomization needed)
 - **Extends Config**: Validation and formatting are extended to cover the full MAX_TEAMS range
 
-This is used to apply template changes (formulas, formatting, validation) to an existing spreadsheet without losing referee work. Sheet protection is NOT reapplied — run "Apply Sheet Protection" afterward if needed.
+Sheets are updated in-place — active users are not disrupted (no sheet deletion/recreation). This is used to apply template changes (formulas, formatting, validation) to an existing spreadsheet without losing referee work. If referee emails were changed, re-run "Apply Sheet Protection" to update access.
 
 The function auto-detects the current sheet layout (old 23-column, v2 24-column with MOTIF at D, v3 24-column with MOTIF at M and PATTERN columns, or current 22-column with MOTIF at M and inlined PATTERN) when reading data to ensure compatibility during template transitions. Old-layout data is mapped to new column positions automatically; the G Rules column will be empty after migration from the original 23-column layout (it didn't exist).
 
@@ -255,7 +256,7 @@ FinalScores uses INDIRECT to reference referee sheets by name from Config:
 This allows sheet tab names to change without breaking formulas. Each score formula uses `LET` to compute the effective referee (Official Ref if selected, or auto-selected single ref) inline, then VLOOKUPs that referee's data.
 
 ### Formula: Agreement Check
-Uses `FILTER`/`UNIQUE`/`ROWS` to compare values across all referees who scored a team. Each referee's value is fetched via INDIRECT VLOOKUP. All input columns except G Rules are checked: MOTIF, LEAVE, Auto CLASSIFIED/OVERFLOW/RAMP, TeleOp CLASSIFIED/OVERFLOW/DEPOT/RAMP, BASE, Minor Fouls, and Major Fouls. G Rules are excluded because referees may legitimately cite different rules. Blank fields on scored rows are treated as "(blank)" — distinct from an explicit 0 or any entered value. Text fields are normalized to uppercase for comparison.
+Uses `FILTER`/`UNIQUE`/`ROWS` to compare values across all referees who scored a team. Each referee's value is fetched via INDIRECT VLOOKUP. All input columns except G Rules are checked: MOTIF, LEAVE, Auto CLASSIFIED/OVERFLOW/RAMP, TeleOp CLASSIFIED/OVERFLOW/DEPOT/RAMP, BASE, Minor Fouls, and Major Fouls. G Rules are excluded because referees may legitimately cite different rules. Blank fields on scored rows remain as empty strings — distinct from an explicit 0 or any entered value. Text fields are normalized to uppercase for comparison.
 
 ### Formula: Scored By
 Uses TEXTJOIN to list referee names who have scored a team. A referee is considered to have scored when any of MOTIF, LEAVE, or Auto CLASSIFIED is non-empty (composite check). Wrapped in IFERROR for edge cases.
